@@ -51,7 +51,7 @@ offsets = {
         'rdx',
         'rsi',
         'rdi',
-        'unknown',  # I'm not sure what this field is
+        'orig_ax',
         'rip',
         'cs',
         'eflags',
@@ -91,10 +91,10 @@ class Coredump(interfaces.plugins.PluginInterface):
     def _parse_kernel_stack(self, task):
         result = collections.OrderedDict()
         vmlinux = self.context.modules[self.config['kernel']]
-        if hasattr(task, "sp"):
-            sp = task.sp
-            # proc_as = task.get_process_address_space()
-            addr = sp
+
+        # proc_as = task.get_process_address_space()
+        if hasattr(task, "stack"):
+            addr = task.stack + (1 << 14)
 
             for reg in offsets["64bit"][::-1]:  # reverse list, because we read up in the stack
                 # debug.info("Reading {:016x}".format(addr))
@@ -122,11 +122,11 @@ class Coredump(interfaces.plugins.PluginInterface):
         thread_registers = {}
 
         thread_task = task.thread
-        regs = self._parse_kernel_stack(thread_task)
+        regs = self._parse_kernel_stack(task)
         thread_registers[task.pid] = regs
 
         for t in task.thread_group:
-            regs = self._parse_kernel_stack(t.thread)
+            regs = self._parse_kernel_stack(t)
             if regs:
                 thread_registers[t.pid] = regs
 

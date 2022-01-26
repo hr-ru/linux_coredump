@@ -8,6 +8,7 @@ import io
 import sys
 from typing import List
 
+from volatility3.framework.plugins.linux.elf import PF_R, VM_WRITE, VM_EXEC
 from volatility3.plugins.linux import elf
 import ctypes
 
@@ -43,12 +44,22 @@ class coredump:
 
     def get_vma_flags(self, vma_flags):
         flags = 0
-        if vma_flags[0] == 'r':
-            flags = flags | elf.PF_R
-        if vma_flags[1] == 'w':
+        # if vma_flags & VM_READ == VM_READ:
+        flags = flags | elf.PF_R
+        if vma_flags & VM_WRITE == VM_WRITE:
             flags = flags | elf.PF_W
-        if vma_flags[2] == 'x':
+        if vma_flags & VM_EXEC == VM_EXEC:
             flags = flags | elf.PF_X
+
+        return flags
+
+    def get_shdr_flags(self, vma_flags):
+        flags = 0
+        if vma_flags & elf.PF_X == elf.PF_X:
+            flags = flags | elf.SHF_EXECINSTR
+        flags = flags | elf.SHF_ALLOC
+        if vma_flags & elf.PF_W == elf.PF_W:
+            flags = flags | elf.SHF_WRITE
 
         return flags
 
@@ -98,7 +109,7 @@ class coredump:
 
             v.memsz = size
             v.start = vma.vm_start
-            v.flags = self.get_vma_flags(str(vma.vm_flags))
+            v.flags = self.get_vma_flags(vma.vm_flags)
             vmas_tmp.append(v)
         return vmas_tmp
 
@@ -120,9 +131,9 @@ class coredump:
 
         if self.task.state == TASK_ALIVE:
             prpsinfo.pr_state = 0
-        if self.task.state == TASK_DEAD:
+        elif self.task.state == TASK_DEAD:
             prpsinfo.pr_state = 4
-        if self.task.state == TASK_STOPPED:
+        elif self.task.state == TASK_STOPPED:
             prpsinfo.pr_state = 3
 
         prpsinfo.pr_sname = '.'.encode("utf-8") if prpsinfo.pr_state > 5 else (
@@ -192,13 +203,13 @@ class coredump:
         prstatus.pr_reg.rdx = regs["rdx"]
         prstatus.pr_reg.rsi = regs["rsi"]
         prstatus.pr_reg.rdi = regs["rdi"]
-        # prstatus.pr_reg.orig_rax	= regs["unknown?"]
+        prstatus.pr_reg.orig_rax = regs["orig_ax"]
         prstatus.pr_reg.rip = regs["rip"]
         prstatus.pr_reg.cs = regs["cs"]
         prstatus.pr_reg.eflags = regs["eflags"]
         prstatus.pr_reg.rsp = regs["rsp"]
         prstatus.pr_reg.ss = regs["ss"]
-        #	prstatus.pr_reg.fs_base		= regs["fs_base"]
+        prstatus.pr_reg.fs_base	= thread.thread.fsbase
         #	prstatus.pr_reg.gs_base		= regs["gs_base"]
         #	prstatus.pr_reg.ds		= regs["ds"]		MISSING
         #	prstatus.pr_reg.es		= regs["es"]
@@ -465,6 +476,30 @@ class coredump:
 
         return note
 
+    def _gen_auxv(self):
+        auxv = self.task.mm.saved_auxv
+        auxv_arr = (elf.Elf64_auxv_t * int(len(auxv) / 2))()
+
+        index = 0
+        while index + 1 < len(auxv_arr):
+            aux = elf.Elf64_auxv_t()
+            aux.a_type = auxv[index * 2]
+            aux.a_un.a_val = auxv[index * 2 + 1]
+            auxv_arr[index] = aux
+            index += 1
+
+        nhdr = elf.Elf64_Nhdr()
+        nhdr.n_namesz = 5  # XXX strlen + 1
+        nhdr.n_descsz = ctypes.sizeof(auxv_arr)
+        nhdr.n_type = elf.NT_AUXV
+
+        note = elf_note()
+        note.nhdr = nhdr
+        note.owner = "CORE"
+        note.data = auxv_arr
+
+        return note
+
     def gen_notes(self):
         """
         Generate notes for core dump of process pid.
@@ -482,7 +517,7 @@ class coredump:
 
             notes += self.gen_thread_notes(t)
 
-        #		notes.append(self._gen_auxv(pid))  unknown
+        notes.append(self._gen_auxv())
         notes.append(self._gen_files())
         return notes
 
@@ -535,6 +570,7 @@ class coredump:
         phdr.p_type = elf.PT_NOTE
         phdr.p_offset = offset
         phdr.p_filesz = filesz
+        phdr.p_flags = PF_R  # Read
 
         phdrs.append(phdr)
 
@@ -671,7 +707,8 @@ class coredump:
 
         section_header_start += note_align
 
-        string_table = b'\0' + ".shstrtab".encode("utf-8") + b'\0' + "note0".encode("utf-8") + b'\0' + "load".encode("utf-8") + b'\0'
+        string_table = b'\0' + ".shstrtab".encode("utf-8") + b'\0' + "note0".encode("utf-8") + b'\0' \
+                       + "load".encode("utf-8") + b'\0'
         section_header_start += len(string_table)
 
         self.ehdr.e_shoff = section_header_start
@@ -726,7 +763,7 @@ class coredump:
             shdr.sh_type = 1  # -> progbits
             shdr.sh_addr = vma.start
             shdr.sh_offset = current_offset
-            shdr.sh_flags = 2
+            shdr.sh_flags = self.get_shdr_flags(vma.flags)
             shdr.sh_addralign = 1
 
             vma_size = 0
@@ -744,7 +781,7 @@ class coredump:
         shdr.sh_type = 3  # -> STRTAB
         shdr.sh_addr = 0
         shdr.sh_offset = current_offset
-        shdr.sh_size = 0
+        shdr.sh_size = len(string_table)
         shdr.sh_flags = 2  # -> SHF_ALLOC
         shdr.sh_addralign = 1
         self.shdrs.append(shdr)

@@ -53,6 +53,13 @@ EM_386		= 3			# #define EM_386       3 	              /* Intel 80386 architectur
 # Legal values for e_version (version).
 EV_CURRENT	= 1		# #define EV_CURRENT      1               /* Current version */
 
+# VM_FLAGS
+VM_READ=0x0001  # /* currently active flags */
+VM_WRITE=0x0002
+VM_EXEC=0x0004
+VM_SHARED=0x0008
+
+
 class Elf64_Ehdr(ctypes.Structure):			# typedef struct
 	_fields_ = [				# {
 	("e_ident",	ctypes.c_ubyte*EI_NIDENT),	#   unsigned char e_ident[EI_NIDENT];
@@ -100,6 +107,11 @@ PT_NOTE	= 4		# #define PT_NOTE         4               /* Auxiliary information 
 PF_X	= 1		# #define PF_X            (1 << 0)        /* Segment is executable */
 PF_W	= 1 << 1	# #define PF_W            (1 << 1)        /* Segment is writable */
 PF_R	= 1 << 2	# #define PF_R            (1 << 2)        /* Segment is readable */
+
+SHF_WRITE = 0x1
+SHF_ALLOC = 0x2
+SHF_EXECINSTR = 0x4
+
 
 class Elf64_Phdr(ctypes.Structure):			# typedef struct
 	_fields_ = [				# {
