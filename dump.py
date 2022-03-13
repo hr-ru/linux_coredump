@@ -8,8 +8,8 @@ import io
 import sys
 from typing import List
 
-from volatility3.framework.plugins.linux.elf import PF_R, VM_WRITE, VM_EXEC
-from volatility3.plugins.linux import elf
+from . import elf
+from .elf import PF_R, VM_WRITE, VM_EXEC
 import ctypes
 
 from volatility3.framework.objects import StructType
@@ -319,7 +319,7 @@ class coredump:
         notes.append(self.gen_prstatus(thread))
         #	notes.append(self.gen_fpregset(pid, tid))  floating point register do not know hot to get them
         #	notes.append(self.gen_x86_xstate(pid, tid)) unknown
-        #	notes.append(self.gen_siginfo())
+        # notes.append(self.gen_siginfo())
 
         return notes
 

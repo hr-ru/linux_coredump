@@ -5,7 +5,7 @@ import os
 import struct
 from typing import List
 
-from volatility3.plugins.linux import dump
+from . import dump
 
 from volatility3.framework import interfaces, renderers
 from volatility3.framework.configuration import requirements
