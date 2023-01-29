@@ -7,11 +7,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="256a42b3-cb93-4da0-8d40-fa3f52771637" name="Default Changelist" comment="update / cleanup">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/coredump.py" beforeDir="false" afterPath="$PROJECT_DIR$/coredump.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dump.py" beforeDir="false" afterPath="$PROJECT_DIR$/dump.py" afterDir="false" />
-    </list>
+    <list default="true" id="256a42b3-cb93-4da0-8d40-fa3f52771637" name="Default Changelist" comment="configure debug" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -248,7 +244,14 @@
       <option name="project" value="LOCAL" />
       <updated>1675019768213</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="configure debug">
+      <created>1675031088709</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1675031088709</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="ToolWindowManager">
@@ -306,7 +309,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="update / cleanup" />
-    <option name="LAST_COMMIT_MESSAGE" value="update / cleanup" />
+    <MESSAGE value="configure debug" />
+    <option name="LAST_COMMIT_MESSAGE" value="configure debug" />
   </component>
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/elf64.py" />
