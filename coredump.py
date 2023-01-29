@@ -1,16 +1,10 @@
 # File originally by Jonas Pöhler
 #
-# Note:
-# There is code based on the following:
-# based on work from https://github.com/Angelomirabella/linux_coredump/blob/master/coredump.py
-# (no license statement)
-# based on work from https://github.com/checkpoint-restore/criu/tree/criu-dev/coredump
-# (GPL licensed)
-# but that code is not in this file (coredump.py), but in dump.py.
+# All the main work of creating the coredump is delegated to dump.py
+# The code for getting registers from the stack was moved to dump.py
 
 import io
 import logging
-import struct
 from typing import List
 
 from . import dump
@@ -37,6 +31,7 @@ class Coredump(interfaces.plugins.PluginInterface):
             requirements.IntRequirement(name='pid',
                                         description="Process ID to include (all other processes are excluded)",
                                         optional=False),
+            requirements.IntRequirement(name='coredebug', description="logging debug level (0 or 1)", optional=True),
             requirements.StringRequirement(name='output-file', description='Output file', optional=False)
         ]
 
@@ -52,9 +47,8 @@ class Coredump(interfaces.plugins.PluginInterface):
         # Get registers from main thread of task
         task: StructType = task_list[0]
 
-
         kernel = self.config['kernel']
-        cd = dump.coredump(self.context, task, kernel, dump.coredump.ELF_ISA_x86_64)
+        cd = dump.coredump(self.context, task, kernel, dump.coredump.ELF_ISA_x86_64, self.config.get("coredebug",0))
         cd.generate_coredump()
         with io.FileIO(self.config['output-file'], "wb+") as f:
             cd.write(f)

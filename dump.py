@@ -1,11 +1,12 @@
-# File by Jonas Pöhler https://github.com/poehlerj/linux_coredump
+# File originally by Jonas Pöhler https://github.com/poehlerj/linux_coredump
+# with changes by Hans P. Reiser
 #
-# Note:
-# based on work from https://github.com/Angelomirabella/linux_coredump/blob/master/coredump.py
+# This file was originally based on https://github.com/Angelomirabella/linux_coredump/blob/master/coredump.py
 # (no license statement)
-# based on work from https://github.com/checkpoint-restore/criu/tree/criu-dev/coredump
+# which in turn was based on work from https://github.com/checkpoint-restore/criu/tree/criu-dev/coredump
 # (GPL licensed)
 #
+# This code was heavily
 # The code from criu-dev has now been replaced by functionality from elffile.py
 # There should by no criu code in here any more
 # TODO: Check if there is Angelomirabella code in here and what its lisence status is
@@ -22,7 +23,7 @@ from . import elffile #as elffile
 
 from volatility3.framework.objects import StructType
 
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, format="%(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
+logging.basicConfig(stream=sys.stderr, level=logging.WARNING, format="%(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
 logger = logging.getLogger("elffile")
 
 #% see https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/ptrace.h for pt_regs structure definition
@@ -88,7 +89,7 @@ class coredump:
     ELF_ISA_x86 = 3
     ELF_ISA_x86_64 = 0x3E
 
-    def __init__(self, context, task: StructType, kernel, isa=ELF_ISA_x86_64):
+    def __init__(self, context, task: StructType, kernel, isa=ELF_ISA_x86_64, debug=0):
         self.context = context
         self.task = task
         self.vma_list = task.mm.get_mmap_iter()
@@ -104,6 +105,9 @@ class coredump:
                 self.threads_registers[t.pid] = regs
 
         self.isa = isa
+
+        if debug>0:
+            logger.setLevel(logging.DEBUG)
 
 
     def _parse_kernel_stack(self, task):
