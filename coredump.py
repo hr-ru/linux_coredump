@@ -31,7 +31,6 @@ class Coredump(interfaces.plugins.PluginInterface):
             requirements.IntRequirement(name='pid',
                                         description="Process ID to include (all other processes are excluded)",
                                         optional=False),
-            requirements.IntRequirement(name='coredebug', description="logging debug level (0 or 1)", optional=True),
             requirements.StringRequirement(name='output-file', description='Output file', optional=False)
         ]
 
@@ -48,7 +47,7 @@ class Coredump(interfaces.plugins.PluginInterface):
         task: StructType = task_list[0]
 
         kernel = self.config['kernel']
-        cd = dump.coredump(self.context, task, kernel, dump.coredump.ELF_ISA_x86_64, self.config.get("coredebug",0))
+        cd = dump.coredump(self.context, task, kernel, dump.coredump.ELF_ISA_x86_64)
         cd.generate_coredump()
         with io.FileIO(self.config['output-file'], "wb+") as f:
             cd.write(f)
