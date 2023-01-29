@@ -199,7 +199,7 @@ class coredump:
         notes = []
 
         prstatus = self.gen_prstatus(thread)
-        logger.debug("Notes: appending prstatus for thread %d: %s", thread.tid, prstatus)
+        logger.debug("Notes: appending prstatus for thread %d: %s", thread.pid, prstatus)
         notes.append(prstatus)
         # notes.append(self.gen_fpregset(pid, tid))  floating point register should be in task->fpu
         # notes.append(self.gen_x86_xstate(pid, tid)) unknown
