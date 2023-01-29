@@ -314,9 +314,9 @@ class ElfData(Enum):
 
 class EV(Enum):
     """
-    Encodes the elf file format version of this elf file as from the `ident portion of the elf file
-    header
-    <http://www.sco.com/developers/gabi/latest/ch4.eheader.html#elfid>`_.  This is a subclass of :py:class:`coding.Coding`.
+    Encodes the elf file format version of this elf file as from the `ident portion of the elf file header
+    <http://www.sco.com/developers/gabi/latest/ch4.eheader.html#elfid>`_.
+    This is a subclass of :py:class:`coding.Coding`.
     """
     EV_NONE = 0
     EV_CURRENT = 1
@@ -359,7 +359,7 @@ class ElfFile(StructBase):
     abstract base class which is not intended to be instantiated but
     rather subclassed.
 
-    This abstract base class works in tight concert with it's
+    This abstract base class works in tight concert with its
     subclasses: :py:class:`ElfFile32b`, :py:class:`ElfFile32l`,
     :py:class:`ElfFile64b`, and :py:class:`ElfFile64l`.  This abstract
     base class sets useless defaults and includes byte order and word
@@ -441,17 +441,17 @@ class ElfFile(StructBase):
         else:
             raise ElfFile.NO_ENCODING
 
-    def __new__(cls, name, fileIdent):
-        assert fileIdent
+    def __new__(cls, name, file_ident):
+        assert file_ident
 
         if cls != ElfFile:
             return object.__new__(cls)
 
-        retval = ElfFile.__new__(ElfFile.encodedClass(fileIdent), name, fileIdent)
-        retval.__init__(name, fileIdent)
+        retval = ElfFile.__new__(ElfFile.encodedClass(file_ident), name, file_ident)
+        retval.__init__(name, file_ident)
         return retval
 
-    def __init__(self, name, fileIdent):
+    def __init__(self, name, file_ident):
         """
         :param :py:class:`str` name
         :param :py:class:`ElfFileIdent`
@@ -460,7 +460,7 @@ class ElfFile(StructBase):
         self._offsets = None
         self.name = name
 
-        self.fileIdent = fileIdent
+        self.fileIdent = file_ident
         self.fileHeader = None
         self.sectionHeaders = []
         self.programHeaders = []
@@ -591,12 +591,12 @@ class ElfFile(StructBase):
 
         # TODO: This was here in the old code, but no idea what it was meant to be good for.
         pcoff = x
-        for i in self.programHeaders:
-            x += 0
+        # for i in self.programHeaders:
+        #      x += 0
 
         total = x
         logger.debug("Offset: program headers=0x%x, sections=0x%s, section headers=0x%x, pcoff=0x%x, end=0x%x",
-                      phoff, scoff, shoff, pcoff, total)
+                     phoff, scoff, shoff, pcoff, total)
         self._offsets = (total, scoff, shoff, pcoff, phoff)
         return self._offsets
 
@@ -624,7 +624,7 @@ class ElfFile(StructBase):
 
         # We could merge pointers to same strings and/or common suffixes, but let's keep it simple
 
-        # Total size is sum of the sizes of all of the names (plus \0 at the end) plus initial null
+        # Total size is sum of the sizes of all the names (plus \0 at the end) plus initial null
         section.section_size = functools.reduce(operator.__add__, [len(sh.name)+1 for sh in self.sectionHeaders]) + 1
 
         # HPR: the original code was "contents", but this should be "content"!
@@ -667,7 +667,8 @@ class ElfFile(StructBase):
             section.offset = p
             newlen = len(section.content)
             diff = ""
-            if newlen != section.section_size: diff = "(was "+str(section.section_size)+" before update)"
+            if newlen != section.section_size:
+                diff = "(was "+str(section.section_size)+" before update)"
             logger.debug("Packing section at offset %x, size is %x %s", p, newlen, diff)
             section.section_size = newlen
             if isinstance(section.content, bytearray) or isinstance(section.content, bytes):
@@ -675,7 +676,7 @@ class ElfFile(StructBase):
                 p += section.section_size
             else:
                 psize = 0
-                # its a generator
+                # it's a generator
                 for page in section.content.generate():
                     if not page == b'\0' * len(page):
                         block[p:p + len(page)] = page
@@ -717,7 +718,7 @@ class ElfFile(StructBase):
 
     def sectionName(self, section):
         """
-        Given a section, return it's name.
+        Given a section, return its name.
 
         :param :py:class:`ElfSectionHeader` section:
         """
@@ -831,7 +832,7 @@ class ElfFileHeader(StructBase):
     which can be decoded with the accompanying
     :py:class:`coding.Coding` subclasses.
 
-    This abstract base class works in tight concert with it's
+    This abstract base class works in tight concert with its
     subclasses: :py:class:`ElfFileHeader32b`,
     :py:class:`ElfFileHeader32l`, :py:class:`ElfFileHeader64b`, and
     :py:class:`ElfFileHeader64l`.  This base class sets useless
@@ -930,17 +931,17 @@ class ElfFileHeader(StructBase):
 
     def pack_into(self, block, offset=0):
         self.coder.pack_into(block, offset, self.type.value, self.machine.value,
-                             self.version if self.version != None else 1,
-                             self.entry if self.entry != None else 0,
-                             self.phoff if self.phoff != None else 0,
-                             self.shoff if self.shoff != None else 0,
-                             self.flags if self.flags != None else 0,
-                             self.ehsize if self.ehsize != None else self.size,
-                             self.phentsize if self.phentsize != None else self.programHeaderClass.size,
-                             self.phnum if self.phnum != None else 0,
-                             self.shentsize if self.shentsize != None else self.sectionHeaderClass.size,
-                             self.shnum if self.shnum != None else 0,
-                             self.shstrndx if self.shstrndx != None else 0)
+                             self.version if self.version is not None else 1,
+                             self.entry if self.entry is not None else 0,
+                             self.phoff if self.phoff is not None else 0,
+                             self.shoff if self.shoff is not None else 0,
+                             self.flags if self.flags is not None else 0,
+                             self.ehsize if self.ehsize is not None else self.size,
+                             self.phentsize if self.phentsize is not None else self.programHeaderClass.size,
+                             self.phnum if self.phnum is not None else 0,
+                             self.shentsize if self.shentsize is not None else self.sectionHeaderClass.size,
+                             self.shnum if self.shnum is not None else 0,
+                             self.shstrndx if self.shstrndx is not None else 0)
 
         return self
 
@@ -1064,160 +1065,160 @@ class EM(IntEnum):
     This is a subclass of :py:class:`coding.Coding` and encodes
     :py:attr:`ElfFileHeader.machine`.
     """
-    EM_NONE = 0  # 'No machine')
-    EM_M32 = 1  # 'AT&T WE 32100')
-    EM_SPARC = 2  # 'SPARC')
-    EM_386 = 3  # 'Intel 80386')
-    EM_68K = 4  # 'Motorola 68000')
-    EM_88K = 5  # 'Motorola 88000')
-    EM_486 = 6  # 'Reserved for future use (was EM_486)')
-    EM_860 = 7  # 'Intel 80860')
-    EM_MIPS = 8  # 'MIPS I Architecture')
-    EM_S370 = 9  # 'IBM System/370 Processor')
-    EM_MIPS_RS3_LE = 10  # 'MIPS RS3000 Little-endian')
+    EM_NONE = 0  # 'No machine'
+    EM_M32 = 1  # 'AT&T WE 32100'
+    EM_SPARC = 2  # 'SPARC'
+    EM_386 = 3  # 'Intel 80386'
+    EM_68K = 4  # 'Motorola 68000'
+    EM_88K = 5  # 'Motorola 88000'
+    EM_486 = 6  # 'Reserved for future use (was EM_486)'
+    EM_860 = 7  # 'Intel 80860'
+    EM_MIPS = 8  # 'MIPS I Architecture'
+    EM_S370 = 9  # 'IBM System/370 Processor'
+    EM_MIPS_RS3_LE = 10  # 'MIPS RS3000 Little-endian'
     # 11 - 14 reserved
-    EM_PARISC = 15  # 'Hewlett-Packard PA-RISC')
+    EM_PARISC = 15  # 'Hewlett-Packard PA-RISC'
     # 16 reserved
-    EM_VPP500 = 17  # 'Fujitsu VPP500')
-    EM_SPARC32PLUS = 18  # 'Enhanced instruction set SPARC')
-    EM_960 = 19  # 'Intel 80960')
-    EM_PPC = 20  # 'PowerPC')
-    EM_PPC64 = 21  # '64-bit PowerPC')
-    EM_S390 = 22  # 'IBM System/390 Processor')
-    EM_SPU = 23  # 'IBM SPU/SPC')
+    EM_VPP500 = 17  # 'Fujitsu VPP500'
+    EM_SPARC32PLUS = 18  # 'Enhanced instruction set SPARC'
+    EM_960 = 19  # 'Intel 80960'
+    EM_PPC = 20  # 'PowerPC'
+    EM_PPC64 = 21  # '64-bit PowerPC'
+    EM_S390 = 22  # 'IBM System/390 Processor'
+    EM_SPU = 23  # 'IBM SPU/SPC'
     # 24 - 35 reserved
-    EM_V800 = 36  # 'NEC V800')
-    EM_FR20 = 37  # 'Fujitsu FR20')
-    EM_RH32 = 38  # 'TRW RH-32')
-    EM_RCE = 39  # 'Motorola RCE')
-    EM_ARM = 40  # 'Advanced RISC Machines ARM')
-    EM_ALPHA = 41  # 'Digital Alpha')
-    EM_SH = 42  # 'Hitachi SH')
-    EM_SPARCV9 = 43  # 'SPARC Version 9')
-    EM_TRICORE = 44  # 'Siemens TriCore embedded processor')
-    EM_ARC = 45  # 'Argonaut RISC Core, Argonaut Technologies Inc.')
-    EM_H8_300 = 46  # 'Hitachi H8/300')
-    EM_H8_300H = 47  # 'Hitachi H8/300H')
-    EM_H8S = 48  # 'Hitachi H8S')
-    EM_H8_500 = 49  # 'Hitachi H8/500')
-    EM_IA_64 = 50  # 'Intel IA-64 processor architecture')
-    EM_MIPS_X = 51  # 'Stanford MIPS-X')
-    EM_COLDFIRE = 52  # 'Motorola ColdFire')
-    EM_68HC12 = 53  # 'Motorola M68HC12')
-    EM_MMA = 54  # 'Fujitsu MMA Multimedia Accelerator')
-    EM_PCP = 55  # 'Siemens PCP')
-    EM_NCPU = 56  # 'Sony nCPU embedded RISC processor')
-    EM_NDR1 = 57  # 'Denso NDR1 microprocessor')
-    EM_STARCORE = 58  # 'Motorola Star*Core processor')
-    EM_ME16 = 59  # 'Toyota ME16 processor')
-    EM_ST100 = 60  # 'STMicroelectronics ST100 processor')
-    EM_TINYJ = 61  # 'Advanced Logic Corp. TinyJ embedded processor family')
-    EM_X86_64 = 62  # 'AMD x86-64 architecture')
-    EM_PDSP = 63  # 'Sony DSP Processor')
-    EM_PDP10 = 64  # 'Digital Equipment Corp. PDP-10')
-    EM_PDP11 = 65  # 'Digital Equipment Corp. PDP-11')
-    EM_FX66 = 66  # 'Siemens FX66 microcontroller')
-    EM_ST9PLUS = 67  # 'STMicroelectronics ST9+ 8/16 bit microcontroller')
-    EM_ST7 = 68  # 'STMicroelectronics ST7 8-bit microcontroller')
-    EM_68HC16 = 69  # 'Motorola MC68HC16 Microcontroller')
-    EM_68HC11 = 70  # 'Motorola MC68HC11 Microcontroller')
-    EM_68HC08 = 71  # 'Motorola MC68HC08 Microcontroller')
-    EM_68HC05 = 72  # 'Motorola MC68HC05 Microcontroller')
-    EM_SVX = 73  # 'Silicon Graphics SVx')
-    EM_ST19 = 74  # 'STMicroelectronics ST19 8-bit microcontroller')
-    EM_VAX = 75  # 'Digital VAX')
-    EM_CRIS = 76  # 'Axis Communications 32-bit embedded processor')
-    EM_JAVELIN = 77  # 'Infineon Technologies 32-bit embedded processor')
-    EM_FIREPATH = 78  # 'Element 14 64-bit DSP Processor')
-    EM_ZSP = 79  # 'LSI Logic 16-bit DSP Processor')
-    EM_MMIX = 80  # 'Donald Knuth\'s educational 64-bit processor')
-    EM_HUANY = 81  # 'Harvard University machine-independent object files')
-    EM_PRISM = 82  # 'SiTera Prism')
-    EM_AVR = 83  # 'Atmel AVR 8-bit microcontroller')
-    EM_FR30 = 84  # 'Fujitsu FR30')
-    EM_D10V = 85  # 'Mitsubishi D10V')
-    EM_D30V = 86  # 'Mitsubishi D30V')
-    EM_V850 = 87  # 'NEC v850')
-    EM_M32R = 88  # 'Mitsubishi M32R')
-    EM_MN10300 = 89  # 'Matsushita MN10300')
-    EM_MN10200 = 90  # 'Matsushita MN10200')
-    EM_PJ = 91  # 'picoJava')
-    EM_OPENRISC = 92  # 'OpenRISC 32-bit embedded processor')
-    EM_ARC_COMPACT = 93  # 'ARC International ARCompact processor (old spelling/synonym: EM_ARC_A5)')
-    EM_XTENSA = 94  # 'Tensilica Xtensa Architecture')
-    EM_VIDEOCORE = 95  # 'Alphamosaic VideoCore processor')
-    EM_TMM_GPP = 96  # 'Thompson Multimedia General Purpose Processor')
-    EM_NS32K = 97  # 'National Semiconductor 32000 series')
-    EM_TPC = 98  # 'Tenor Network TPC processor')
-    EM_SNP1K = 99  # 'Trebia SNP 1000 processor')
-    EM_ST200 = 100  # 'STMicroelectronics (www.st.com) ST200 microcontroller')
-    EM_IP2K = 101  # 'Ubicom IP2xxx microcontroller family')
-    EM_MAX = 102  # 'MAX Processor')
-    EM_CR = 103  # 'National Semiconductor CompactRISC microprocessor')
-    EM_F2MC16 = 104  # 'Fujitsu F2MC16')
-    EM_MSP430 = 105  # 'Texas Instruments embedded microcontroller msp430')
-    EM_BLACKFIN = 106  # 'Analog Devices Blackfin (DSP) processor')
-    EM_SE_C33 = 107  # 'S1C33 Family of Seiko Epson processors')
-    EM_SEP = 108  # 'Sharp embedded microprocessor')
-    EM_ARCA = 109  # 'Arca RISC Microprocessor')
-    EM_UNICORE = 110  # 'Microprocessor series from PKU-Unity Ltd. and MPRC of Peking University')
-    EM_EXCESS = 111  # 'eXcess: 16/32/64-bit configurable embedded CPU')
-    EM_DXP = 112  # 'Icera Semiconductor Inc. Deep Execution Processor')
-    EM_ALTERA_NIOS2 = 113  # 'Altera Nios II soft-core processor')
-    EM_CRX = 114  # 'National Semiconductor CompactRISC CRX microprocessor')
-    EM_XGATE = 115  # 'Motorola XGATE embedded processor')
-    EM_C166 = 116  # 'Infineon C16x/XC16x processor')
-    EM_M16C = 117  # 'Renesas M16C series microprocessors')
-    EM_DSPIC30F = 118  # 'Microchip Technology dsPIC30F Digital Signal Controller')
-    EM_CE = 119  # 'Freescale Communication Engine RISC core')
-    EM_M32C = 120  # 'Renesas M32C series microprocessors')
+    EM_V800 = 36  # 'NEC V800'
+    EM_FR20 = 37  # 'Fujitsu FR20'
+    EM_RH32 = 38  # 'TRW RH-32'
+    EM_RCE = 39  # 'Motorola RCE'
+    EM_ARM = 40  # 'Advanced RISC Machines ARM'
+    EM_ALPHA = 41  # 'Digital Alpha'
+    EM_SH = 42  # 'Hitachi SH'
+    EM_SPARCV9 = 43  # 'SPARC Version 9'
+    EM_TRICORE = 44  # 'Siemens TriCore embedded processor'
+    EM_ARC = 45  # 'Argonaut RISC Core, Argonaut Technologies Inc.'
+    EM_H8_300 = 46  # 'Hitachi H8/300'
+    EM_H8_300H = 47  # 'Hitachi H8/300H'
+    EM_H8S = 48  # 'Hitachi H8S'
+    EM_H8_500 = 49  # 'Hitachi H8/500'
+    EM_IA_64 = 50  # 'Intel IA-64 processor architecture'
+    EM_MIPS_X = 51  # 'Stanford MIPS-X'
+    EM_COLDFIRE = 52  # 'Motorola ColdFire'
+    EM_68HC12 = 53  # 'Motorola M68HC12'
+    EM_MMA = 54  # 'Fujitsu MMA Multimedia Accelerator'
+    EM_PCP = 55  # 'Siemens PCP'
+    EM_NCPU = 56  # 'Sony nCPU embedded RISC processor'
+    EM_NDR1 = 57  # 'Denso NDR1 microprocessor'
+    EM_STARCORE = 58  # 'Motorola Star*Core processor'
+    EM_ME16 = 59  # 'Toyota ME16 processor'
+    EM_ST100 = 60  # 'STMicroelectronics ST100 processor'
+    EM_TINYJ = 61  # 'Advanced Logic Corp. TinyJ embedded processor family'
+    EM_X86_64 = 62  # 'AMD x86-64 architecture'
+    EM_PDSP = 63  # 'Sony DSP Processor'
+    EM_PDP10 = 64  # 'Digital Equipment Corp. PDP-10'
+    EM_PDP11 = 65  # 'Digital Equipment Corp. PDP-11'
+    EM_FX66 = 66  # 'Siemens FX66 microcontroller'
+    EM_ST9PLUS = 67  # 'STMicroelectronics ST9+ 8/16 bit microcontroller'
+    EM_ST7 = 68  # 'STMicroelectronics ST7 8-bit microcontroller'
+    EM_68HC16 = 69  # 'Motorola MC68HC16 Microcontroller'
+    EM_68HC11 = 70  # 'Motorola MC68HC11 Microcontroller'
+    EM_68HC08 = 71  # 'Motorola MC68HC08 Microcontroller'
+    EM_68HC05 = 72  # 'Motorola MC68HC05 Microcontroller'
+    EM_SVX = 73  # 'Silicon Graphics SVx'
+    EM_ST19 = 74  # 'STMicroelectronics ST19 8-bit microcontroller'
+    EM_VAX = 75  # 'Digital VAX'
+    EM_CRIS = 76  # 'Axis Communications 32-bit embedded processor'
+    EM_JAVELIN = 77  # 'Infineon Technologies 32-bit embedded processor'
+    EM_FIREPATH = 78  # 'Element 14 64-bit DSP Processor'
+    EM_ZSP = 79  # 'LSI Logic 16-bit DSP Processor'
+    EM_MMIX = 80  # 'Donald Knuth\'s educational 64-bit processor'
+    EM_HUANY = 81  # 'Harvard University machine-independent object files'
+    EM_PRISM = 82  # 'SiTera Prism'
+    EM_AVR = 83  # 'Atmel AVR 8-bit microcontroller'
+    EM_FR30 = 84  # 'Fujitsu FR30'
+    EM_D10V = 85  # 'Mitsubishi D10V'
+    EM_D30V = 86  # 'Mitsubishi D30V'
+    EM_V850 = 87  # 'NEC v850'
+    EM_M32R = 88  # 'Mitsubishi M32R'
+    EM_MN10300 = 89  # 'Matsushita MN10300'
+    EM_MN10200 = 90  # 'Matsushita MN10200'
+    EM_PJ = 91  # 'picoJava'
+    EM_OPENRISC = 92  # 'OpenRISC 32-bit embedded processor'
+    EM_ARC_COMPACT = 93  # 'ARC International ARCompact processor (old spelling/synonym: EM_ARC_A5)'
+    EM_XTENSA = 94  # 'Tensilica Xtensa Architecture'
+    EM_VIDEOCORE = 95  # 'Alphamosaic VideoCore processor'
+    EM_TMM_GPP = 96  # 'Thompson Multimedia General Purpose Processor'
+    EM_NS32K = 97  # 'National Semiconductor 32000 series'
+    EM_TPC = 98  # 'Tenor Network TPC processor'
+    EM_SNP1K = 99  # 'Trebia SNP 1000 processor'
+    EM_ST200 = 100  # 'STMicroelectronics (www.st.com) ST200 microcontroller'
+    EM_IP2K = 101  # 'Ubicom IP2xxx microcontroller family'
+    EM_MAX = 102  # 'MAX Processor'
+    EM_CR = 103  # 'National Semiconductor CompactRISC microprocessor'
+    EM_F2MC16 = 104  # 'Fujitsu F2MC16'
+    EM_MSP430 = 105  # 'Texas Instruments embedded microcontroller msp430'
+    EM_BLACKFIN = 106  # 'Analog Devices Blackfin (DSP) processor'
+    EM_SE_C33 = 107  # 'S1C33 Family of Seiko Epson processors'
+    EM_SEP = 108  # 'Sharp embedded microprocessor'
+    EM_ARCA = 109  # 'Arca RISC Microprocessor'
+    EM_UNICORE = 110  # 'Microprocessor series from PKU-Unity Ltd. and MPRC of Peking University'
+    EM_EXCESS = 111  # 'eXcess: 16/32/64-bit configurable embedded CPU'
+    EM_DXP = 112  # 'Icera Semiconductor Inc. Deep Execution Processor'
+    EM_ALTERA_NIOS2 = 113  # 'Altera Nios II soft-core processor'
+    EM_CRX = 114  # 'National Semiconductor CompactRISC CRX microprocessor'
+    EM_XGATE = 115  # 'Motorola XGATE embedded processor'
+    EM_C166 = 116  # 'Infineon C16x/XC16x processor'
+    EM_M16C = 117  # 'Renesas M16C series microprocessors'
+    EM_DSPIC30F = 118  # 'Microchip Technology dsPIC30F Digital Signal Controller'
+    EM_CE = 119  # 'Freescale Communication Engine RISC core'
+    EM_M32C = 120  # 'Renesas M32C series microprocessors'
     # 121 - 130 reserved
-    EM_TSK3000 = 131  # 'Altium TSK3000 core')
-    EM_RS08 = 132  # 'Freescale RS08 embedded processor')
+    EM_TSK3000 = 131  # 'Altium TSK3000 core'
+    EM_RS08 = 132  # 'Freescale RS08 embedded processor'
     # 133 reserved
-    EM_ECOG2 = 134  # 'Cyan Technology eCOG2 microprocessor')
-    EM_SCORE7 = 135  # 'Sunplus S+core7 RISC processor')
-    EM_DSP24 = 136  # 'New Japan Radio (NJR) 24-bit DSP Processor')
-    EM_VIDEOCORE3 = 137  # 'Broadcom VideoCore III processor')
-    EM_LATTICEMICO32 = 138  # 'RISC processor for Lattice FPGA architecture')
-    EM_SE_C17 = 139  # 'Seiko Epson C17 family')
-    EM_TI_C6000 = 140  # 'The Texas Instruments TMS320C6000 DSP family')
-    EM_TI_C2000 = 141  # 'The Texas Instruments TMS320C2000 DSP family')
-    EM_TI_C5500 = 142  # 'The Texas Instruments TMS320C55x DSP family')
+    EM_ECOG2 = 134  # 'Cyan Technology eCOG2 microprocessor'
+    EM_SCORE7 = 135  # 'Sunplus S+core7 RISC processor'
+    EM_DSP24 = 136  # 'New Japan Radio (NJR) 24-bit DSP Processor'
+    EM_VIDEOCORE3 = 137  # 'Broadcom VideoCore III processor'
+    EM_LATTICEMICO32 = 138  # 'RISC processor for Lattice FPGA architecture'
+    EM_SE_C17 = 139  # 'Seiko Epson C17 family'
+    EM_TI_C6000 = 140  # 'The Texas Instruments TMS320C6000 DSP family'
+    EM_TI_C2000 = 141  # 'The Texas Instruments TMS320C2000 DSP family'
+    EM_TI_C5500 = 142  # 'The Texas Instruments TMS320C55x DSP family'
     # 143 - 159 reserved
-    EM_MMDSP_PLUS = 160  # 'STMicroelectronics 64bit VLIW Data Signal Processor')
-    EM_CYPRESS_M8C = 161  # 'Cypress M8C microprocessor')
-    EM_R32C = 162  # 'Renesas R32C series microprocessors')
-    EM_TRIMEDIA = 163  # 'NXP Semiconductors TriMedia architecture family')
-    EM_QDSP6 = 164  # 'QUALCOMM DSP6 Processor')
-    EM_8051 = 165  # 'Intel 8051 and variants')
-    EM_STXP7X = 166  # 'STMicroelectronics STxP7x family of configurable and extensible RISC processors')
-    EM_NDS32 = 167  # 'Andes Technology compact code size embedded RISC processor family')
-    EM_ECOG1 = 168  # 'Cyan Technology eCOG1X family')
-    EM_ECOG1X = 168  # 'Cyan Technology eCOG1X family')
-    EM_MAXQ30 = 169  # 'Dallas Semiconductor MAXQ30 Core Micro-controllers')
-    EM_XIMO16 = 170  # 'New Japan Radio (NJR) 16-bit DSP Processor')
-    EM_MANIK = 171  # 'M2000 Reconfigurable RISC Microprocessor')
-    EM_CRAYNV2 = 172  # 'Cray Inc. NV2 vector architecture')
-    EM_RX = 173  # 'Renesas RX family')
-    EM_METAG = 174  # 'Imagination Technologies META processor architecture')
-    EM_MCST_ELBRUS = 175  # 'MCST Elbrus general purpose hardware architecture')
-    EM_ECOG16 = 176  # 'Cyan Technology eCOG16 family')
-    EM_CR16 = 177  # 'National Semiconductor CompactRISC CR16 16-bit microprocessor')
-    EM_ETPU = 178  # 'Freescale Extended Time Processing Unit')
-    EM_SLE9X = 179  # 'Infineon Technologies SLE9X core')
+    EM_MMDSP_PLUS = 160  # 'STMicroelectronics 64bit VLIW Data Signal Processor'
+    EM_CYPRESS_M8C = 161  # 'Cypress M8C microprocessor'
+    EM_R32C = 162  # 'Renesas R32C series microprocessors'
+    EM_TRIMEDIA = 163  # 'NXP Semiconductors TriMedia architecture family'
+    EM_QDSP6 = 164  # 'QUALCOMM DSP6 Processor'
+    EM_8051 = 165  # 'Intel 8051 and variants'
+    EM_STXP7X = 166  # 'STMicroelectronics STxP7x family of configurable and extensible RISC processors'
+    EM_NDS32 = 167  # 'Andes Technology compact code size embedded RISC processor family'
+    EM_ECOG1 = 168  # 'Cyan Technology eCOG1X family'
+    EM_ECOG1X = 168  # 'Cyan Technology eCOG1X family'
+    EM_MAXQ30 = 169  # 'Dallas Semiconductor MAXQ30 Core Micro-controllers'
+    EM_XIMO16 = 170  # 'New Japan Radio (NJR) 16-bit DSP Processor'
+    EM_MANIK = 171  # 'M2000 Reconfigurable RISC Microprocessor'
+    EM_CRAYNV2 = 172  # 'Cray Inc. NV2 vector architecture'
+    EM_RX = 173  # 'Renesas RX family'
+    EM_METAG = 174  # 'Imagination Technologies META processor architecture'
+    EM_MCST_ELBRUS = 175  # 'MCST Elbrus general purpose hardware architecture'
+    EM_ECOG16 = 176  # 'Cyan Technology eCOG16 family'
+    EM_CR16 = 177  # 'National Semiconductor CompactRISC CR16 16-bit microprocessor'
+    EM_ETPU = 178  # 'Freescale Extended Time Processing Unit'
+    EM_SLE9X = 179  # 'Infineon Technologies SLE9X core'
     # 180-182 Reserved for future Intel use
     # 183-184 Reserved for future ARM use
-    EM_AVR32 = 185  # 'Atmel Corporation 32-bit microprocessor family')
-    EM_STM8 = 186  # 'STMicroeletronics STM8 8-bit microcontroller')
-    EM_TILE64 = 187  # 'Tilera TILE64 multicore architecture family')
-    EM_TILEPRO = 188  # 'Tilera TILEPro multicore architecture family')
-    EM_MICROBLAZE = 189  # 'Xilinx MicroBlaze 32-bit RISC soft processor core')
-    EM_CUDA = 190  # 'NVIDIA CUDA architecture')
-    EM_TILEGX = 191  # 'Tilera TILE-Gx multicore architecture family')
-    EM_CLOUDSHIELD = 192  # 'CloudShield architecture family')
-    EM_COREA_1ST = 193  # 'KIPO-KAIST Core-A 1st generation processor family')
-    EM_COREA_2ND = 194  # 'KIPO-KAIST Core-A 2nd generation processor family')
+    EM_AVR32 = 185  # 'Atmel Corporation 32-bit microprocessor family'
+    EM_STM8 = 186  # 'STMicroeletronics STM8 8-bit microcontroller'
+    EM_TILE64 = 187  # 'Tilera TILE64 multicore architecture family'
+    EM_TILEPRO = 188  # 'Tilera TILEPro multicore architecture family'
+    EM_MICROBLAZE = 189  # 'Xilinx MicroBlaze 32-bit RISC soft processor core'
+    EM_CUDA = 190  # 'NVIDIA CUDA architecture'
+    EM_TILEGX = 191  # 'Tilera TILE-Gx multicore architecture family'
+    EM_CLOUDSHIELD = 192  # 'CloudShield architecture family'
+    EM_COREA_1ST = 193  # 'KIPO-KAIST Core-A 1st generation processor family'
+    EM_COREA_2ND = 194  # 'KIPO-KAIST Core-A 2nd generation processor family'
 
 
 class ElfSectionHeader(StructBase):
@@ -1231,7 +1232,7 @@ class ElfSectionHeader(StructBase):
     which can be decoded with the accompanying
     :py:class:`coding.Coding` subclasses.
 
-    This abstract base class works in tight concert with it's
+    This abstract base class works in tight concert with its
     subclasses: :py:class:`ElfSectionHeader32b`,
     :py:class:`ElfSectionHeader32l`, :py:class:`ElfSectionHeader64b`,
     and :py:class:`ElfSectionHeader64l`.  This base class sets useless
@@ -1314,15 +1315,15 @@ class ElfSectionHeader(StructBase):
     def pack_into(self, block, offset=0):
         """
         .. note:: this is a special case.  *block* here must be the
-            entire file or we won't know how to place our content.
+            entire file, or we won't know how to place our content.
         """
         self.coder.pack_into(block, offset,
                              self.nameoffset, self.type.value, self.flags, self.addr,
                              self.offset, self.section_size, self.link, self.info,
                              self.addralign, self.entsize)
 
-        ## now TODO this is duplicated code.... also writing somewhere (...vma...)
-        ##block[self.offset:self.offset + self.section_size] = self.content
+        # now TODO this is duplicated code.... also writing somewhere (...vma...)
+        # block[self.offset:self.offset + self.section_size] = self.content
 
         return self
 
@@ -1368,7 +1369,7 @@ class ElfSectionHeader(StructBase):
                 hex(id(self)),
                 {
                     'name': self.name,
-                    'type': SHT.bycode[self.type].name if self.type in list(SHT) else self.type,
+                    'type': SHT(self.type).name if self.type in list(SHT) else self.type,
                     'flags': hex(self.flags),
                     'offset': self.offset,
                     'section_size': self.section_size,
@@ -1445,39 +1446,39 @@ class SHT(IntEnum):
     SHT_SYMTAB = 2  # 'provides symbols for link editing, though it may also'
     SHT_STRTAB = 3  # 'section holds a string table. An object file may have'
     SHT_RELA = 4  # 'section holds relocation entries with explicit addends,'
-    SHT_HASH = 5  # 'section holds a symbol hash table')
-    SHT_DYNAMIC = 6  # 'section holds information for dynamic linking')
-    SHT_NOTE = 7  # 'section holds information that marks the file in some way')
+    SHT_HASH = 5  # 'section holds a symbol hash table'
+    SHT_DYNAMIC = 6  # 'section holds information for dynamic linking'
+    SHT_NOTE = 7  # 'section holds information that marks the file in some way'
     SHT_NOBITS = 8  # 'A section of this type occupies no space in the file'
-    SHT_REL = 9  # 'section holds relocation entries without explicit addends')
-    SHT_SHLIB = 10  # 'section type is reserved but has unspecified semantics')
-    SHT_DYNSYM = 11  # 'holds a minimal set of dynamic linking symbols,')
-    SHT_INIT_ARRAY = 14  # 'section contains an array of pointers to initialization functions')
-    SHT_FINI_ARRAY = 15  # 'section contains an array of pointers to termination functions')
+    SHT_REL = 9  # 'section holds relocation entries without explicit addends'
+    SHT_SHLIB = 10  # 'section type is reserved but has unspecified semantics'
+    SHT_DYNSYM = 11  # 'holds a minimal set of dynamic linking symbols,'
+    SHT_INIT_ARRAY = 14  # 'section contains an array of pointers to initialization functions'
+    SHT_FINI_ARRAY = 15  # 'section contains an array of pointers to termination functions'
     SHT_PREINIT_ARRAY = 16  # 'section contains an array of pointers to functions'
-    SHT_GROUP = 17  # 'section defines a section group')
+    SHT_GROUP = 17  # 'section defines a section group'
     SHT_SYMTAB_SHNDX = 18  # 'section is associated with a section of type'
-    SHT_LOOS = 0x60000000  # '')
-    SHT_GNU_ATTRIBUTES = 0x6ffffff5  # 'Object attributes.')
-    SHT_GNU_HASH = 0x6ffffff6  # 'GNU-style hash table.')
-    SHT_GNU_LIBLIST = 0x6ffffff7  # 'Prelink library lis')
-    SHT_CHECKSUM = 0x6ffffff8  # 'Checksum for DSO content.')
-    SHT_LOSUNW = 0x6ffffffa  # 'Sun-specific low bound.')
-    SHT_SUNW_move = 0x6ffffffa  # 'efine SHT_SUNW_COMDAT')
-    SHT_SUNW_COMDAT = 0x6ffffffb  # '')
-    SHT_SUNW_syminfo = 0x6ffffffc  # '')
-    SHT_GNU_verdef = 0x6ffffffd  # 'Version definition section.')
-    SHT_GNU_verneed = 0x6ffffffe  # 'Version needs section.')
-    SHT_GNU_versym = 0x6fffffff  # 'Version symbol table.')
-    SHT_HISUNW = 0x6fffffff  # 'Sun-specific high bound.')
-    SHT_HIOS = 0x6fffffff  # '')
-    SHT_LOPROC = 0x70000000  # '')
-    SHT_HIPROC = 0x7fffffff  # '')
-    SHT_LOUSER = 0x80000000  # '')
-    SHT_HIUSER = 0xffffffff  # '')
+    SHT_LOOS = 0x60000000  # ''
+    SHT_GNU_ATTRIBUTES = 0x6ffffff5  # 'Object attributes.'
+    SHT_GNU_HASH = 0x6ffffff6  # 'GNU-style hash table.'
+    SHT_GNU_LIBLIST = 0x6ffffff7  # 'Prelink library lis'
+    SHT_CHECKSUM = 0x6ffffff8  # 'Checksum for DSO content.'
+    SHT_LOSUNW = 0x6ffffffa  # 'Sun-specific low bound.'
+    SHT_SUNW_move = 0x6ffffffa  # 'efine SHT_SUNW_COMDAT'
+    SHT_SUNW_COMDAT = 0x6ffffffb  # ''
+    SHT_SUNW_syminfo = 0x6ffffffc  # ''
+    SHT_GNU_verdef = 0x6ffffffd  # 'Version definition section.'
+    SHT_GNU_verneed = 0x6ffffffe  # 'Version needs section.'
+    SHT_GNU_versym = 0x6fffffff  # 'Version symbol table.'
+    SHT_HISUNW = 0x6fffffff  # 'Sun-specific high bound.'
+    SHT_HIOS = 0x6fffffff  # ''
+    SHT_LOPROC = 0x70000000  # ''
+    SHT_HIPROC = 0x7fffffff  # ''
+    SHT_LOUSER = 0x80000000  # ''
+    SHT_HIUSER = 0xffffffff  # ''
 
 
-class SHF():
+class SHF:
     """
     Encodes the section flags as represented in the section header
     entry of `the section header table
@@ -1488,19 +1489,19 @@ class SHF():
     or'd together.
     """
     SHF_WRITE = 0x1  # 'section contains data that should be writable'
-    SHF_ALLOC = 0x2  # 'section occupies memory during process execution')
-    SHF_EXECINSTR = 0x4  # 'section contains executable machine instructions')
+    SHF_ALLOC = 0x2  # 'section occupies memory during process execution'
+    SHF_EXECINSTR = 0x4  # 'section contains executable machine instructions'
     SHF_MERGE = 0x10  # 'data in the section may be merged to eliminate'
     SHF_STRINGS = 0x20  # 'data elements in the section consist of'
     SHF_INFO_LINK = 0x40  # 'The sh_info field of this section header'
-    SHF_LINK_ORDER = 0x80  # 'adds special ordering requirements for link editors')
-    SHF_OS_NONCONFORMING = 0x100  # 'section requires special OS-specific processing')
-    SHF_GROUP = 0x200  # 'section is a member of a section group')
-    SHF_TLS = 0x400  # 'section holds Thread-Local Storage')
+    SHF_LINK_ORDER = 0x80  # 'adds special ordering requirements for link editors'
+    SHF_OS_NONCONFORMING = 0x100  # 'section requires special OS-specific processing'
+    SHF_GROUP = 0x200  # 'section is a member of a section group'
+    SHF_TLS = 0x400  # 'section holds Thread-Local Storage'
     SHF_MASKOS = 0x0ff00000  # 'All bits included in this mask are reserved'
     SHF_MASKPROC = 0xf0000000  # 'All bits included in this mask are reserved'
-    SHF_ORDERED = (1 << 30)  # , 'Special ordering requirement (Solaris).')
-    SHF_EXCLUDE = (1 << 31)  # , 'Section is excluded unless referenced or allocated (Solaris).')
+    SHF_ORDERED = (1 << 30)  # , 'Special ordering requirement (Solaris).'
+    SHF_EXCLUDE = (1 << 31)  # , 'Section is excluded unless referenced or allocated (Solaris).'
 
 
 # copied from pyelftools (TODO)
@@ -1597,7 +1598,6 @@ class ElfNotePRStatusRegSet(StructBase):
             self.coder.pack_into(block, offset, self.registers.get(i, 0))
             offset += self.coder.size
         return self
-
 
 
 class ElfNotePRSTATUS(StructBase):
@@ -1800,28 +1800,28 @@ class PT(IntEnum):
     This is a subclass of :py:class:`coding.Coding` and encodes
     :py:attr:`ElfProgramHeader.type`.
     """
-    PT_NULL = 0  # 'array element is unused')
-    PT_LOAD = 1  # 'array element specifies a loadable segment')
-    PT_DYNAMIC = 2  # 'array element specifies dynamic linking information')
+    PT_NULL = 0  # 'array element is unused'
+    PT_LOAD = 1  # 'array element specifies a loadable segment'
+    PT_DYNAMIC = 2  # 'array element specifies dynamic linking information'
     PT_INTERP = 3  # 'array element specifies the location and size'
     PT_NOTE = 4  # 'array element specifies the location and size of'
-    PT_SHLIB = 5  # 'segment type is reserved')
+    PT_SHLIB = 5  # 'segment type is reserved'
     PT_PHDR = 6  # 'specifies the location and size of the program'
-    PT_TLS = 7  # 'array element specifies the Thread-Local Storage template')
-    PT_LOOS = 0x60000000  # '')
-    PT_GNU_EH_FRAME = 0x6474e550  # 'GCC .eh_frame_hdr segment')
-    PT_GNU_STACK = 0x6474e551  # 'Indicates stack executability')
-    PT_GNU_RELRO = 0x6474e552  # 'Read only after relocation')
-    PT_LOSUNW = 0x6ffffffa  # '')
-    PT_SUNWBSS = 0x6ffffffa  # 'Sun Specific segment')
-    PT_SUNWSTACK = 0x6ffffffb  # 'Stack segment')
-    PT_HISUNW = 0x6fffffff  # '')
-    PT_HIOS = 0x6fffffff  # '')
-    PT_LOPROC = 0x70000000  # '')
-    PT_HIPROC = 0x7fffffff  # '')
+    PT_TLS = 7  # 'array element specifies the Thread-Local Storage template'
+    PT_LOOS = 0x60000000  # ''
+    PT_GNU_EH_FRAME = 0x6474e550  # 'GCC .eh_frame_hdr segment'
+    PT_GNU_STACK = 0x6474e551  # 'Indicates stack executability'
+    PT_GNU_RELRO = 0x6474e552  # 'Read only after relocation'
+    PT_LOSUNW = 0x6ffffffa  # ''
+    PT_SUNWBSS = 0x6ffffffa  # 'Sun Specific segment'
+    PT_SUNWSTACK = 0x6ffffffb  # 'Stack segment'
+    PT_HISUNW = 0x6fffffff  # ''
+    PT_HIOS = 0x6fffffff  # ''
+    PT_LOPROC = 0x70000000  # ''
+    PT_HIPROC = 0x7fffffff  # ''
 
 
-class PF():
+class PF:
     """
     Encodes the segment flags as recorded in the `program header
     <http://www.sco.com/developers/gabi/latest/ch5.pheader.html>`_.
