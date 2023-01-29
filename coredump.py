@@ -35,7 +35,6 @@ class Coredump(interfaces.plugins.PluginInterface):
         ]
 
 
-
     def run(self):
         filter_func = pslist.PsList.create_pid_filter([self.config.get('pid', None)])
         task_list = list(pslist.PsList.list_tasks(context=self.context,

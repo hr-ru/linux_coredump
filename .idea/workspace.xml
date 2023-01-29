@@ -7,7 +7,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="256a42b3-cb93-4da0-8d40-fa3f52771637" name="Default Changelist" comment="configure debug" />
+    <list default="true" id="256a42b3-cb93-4da0-8d40-fa3f52771637" name="Default Changelist" comment="configure debug">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/coredump.py" beforeDir="false" afterPath="$PROJECT_DIR$/coredump.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/dump.py" beforeDir="false" afterPath="$PROJECT_DIR$/dump.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/elffile.py" beforeDir="false" afterPath="$PROJECT_DIR$/elffile.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -251,7 +257,14 @@
       <option name="project" value="LOCAL" />
       <updated>1675031088709</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="configure debug">
+      <created>1675032073879</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1675032073879</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="ToolWindowManager">

@@ -38,7 +38,7 @@ pt_regs_x86_64 = ['r15', 'r14', 'r13', 'r12', 'rbp', 'rbx', 'r11', 'r10', 'r9', 
 
 class coredump:
     """
-    This class creates a elf core dump file using elffile, based on volatility3 data structures of a Linux system
+    This class creates an elf core dump file using elffile, based on volatility3 data structures of a Linux system
     (task struct and its siblings) and writes them to a (sparse) file
     """
     # Flags for vm areas in mm struct
@@ -67,6 +67,7 @@ class coredump:
                 self.threads_registers[t.pid] = regs
 
         self.isa = isa
+        self.ef = None    # Will be defined automatically later
 
     def _parse_kernel_stack(self, task):
         result = collections.OrderedDict()
@@ -118,7 +119,7 @@ class coredump:
     def read_addr_range(self, task, start, end):
         PAGESIZE = 4096
 
-        # set the as with our new dtb so we can read from userland
+        # set the as with our new dtb, so we can read from userland
         proc_layer_name = task.add_process_layer()
         if not proc_layer_name:
             return
@@ -129,8 +130,9 @@ class coredump:
             yield proc_layer.read(start, PAGESIZE, pad=True)
             start = start + PAGESIZE
 
-    def ffs(self, x):
-        """ Calculate the index (starting at LSB) of the first set bit in x
+    @staticmethod
+    def ffs(x):
+        """ Calculate the index (starting at LSB) of the first bit set in x
             ffs(0) will return -1
         """
         return (x & -x).bit_length() - 1
@@ -193,7 +195,7 @@ class coredump:
         return prstatus
 
     # def gen_siginfo(self):
-    ## NT_SIGINFO not implemented so far
+    # NT_SIGINFO not implemented so far
 
     def gen_thread_notes(self, thread):
         notes = []
@@ -244,7 +246,7 @@ class coredump:
     # Create ElfFileIdent: The very first part of the header
     # defines ABI (Linux), 64 bit, Little Endian
 
-    def makeEFI(self):
+    def make_efi(self):
         efi = elffile.ElfFileIdent()
         efi.magic = b'\x7fELF'
         efi.elfClass = elffile.ElfClass.ELFCLASS64
@@ -257,15 +259,15 @@ class coredump:
         return efi
 
     # Create ElfSectionHeader
-    def makeSH(self, name=b'', type=elffile.SHT.SHT_NULL, addr=0, offset=0, size=0, entsize=0, flags=0, link=0, info=0,
-               align=1):
+    def make_sh(self, name=b'', stype=elffile.SHT.SHT_NULL, addr=0, offset=0, size=0, entsize=0,
+                flags=0, link=0, info=0, align=1):
         # create one section header
         sh = self.ef.sectionHeaderClass()
         sh.content = b'\0' * size
         sh.section_size = size
         sh.name = name
         sh.offset = offset
-        sh.type = type
+        sh.type = stype
         sh.addr = addr
         sh.flags = flags
         sh.entsize = entsize
@@ -274,11 +276,11 @@ class coredump:
         sh.addralign = align
         return sh
 
-    def makePH(self, type=elffile.PT.PT_NULL, offset=None, vaddr=None, paddr=None, filesz=None, memsz=None, flags=None,
-               align=None):
+    def make_ph(self, ptype=elffile.PT.PT_NULL, offset=None, vaddr=None, paddr=None, filesz=None,
+                memsz=None, flags=None, align=None):
         ph = self.ef.programHeaderClass()
         ph.content = b'\0' * filesz
-        ph.type = type
+        ph.type = ptype
         ph.offset = offset
         ph.vaddr = vaddr
         ph.paddr = paddr
@@ -288,10 +290,10 @@ class coredump:
         ph.align = align
         return ph
 
-    def makePHbySH(self, sh, type=elffile.PT.PT_NULL, vaddr=None, paddr=None, flags=0):
+    def make_ph_by_sh(self, sh, ptype=elffile.PT.PT_NULL, vaddr=None, paddr=None, flags=0):
         ph = self.ef.programHeaderClass()
         ph.content = sh.content
-        ph.type = type
+        ph.type = ptype
         ph.offset = sh.offset
         ph.vaddr = vaddr
         ph.paddr = paddr
@@ -303,9 +305,9 @@ class coredump:
         return ph
 
     class DataGenerator:
-        def __init__(self, coredump, task, start, end) -> None:
+        def __init__(self, cdump, task, start, end) -> None:
             super().__init__()
-            self.coredump = coredump
+            self.coredump = cdump
             self.task = task
             self.start = start
             self.end = end
@@ -317,7 +319,8 @@ class coredump:
         def __len__(self):
             return self.end - self.start
 
-    def checkAllZero(self, gen):
+    @staticmethod
+    def check_all_zero(gen):
         for block in gen.generate():
             if block == b'\0' * len(block):
                 continue
@@ -328,7 +331,7 @@ class coredump:
         """
         Generate core dump for pid.
         """
-        efi = self.makeEFI()  #
+        efi = self.make_efi()  #
         ef = elffile.ElfFile.encodedClass(efi)("<xyz>", efi)
         self.ef = ef
 
@@ -351,35 +354,35 @@ class coredump:
 
         # just for now.
         # This may have to be removed as soon as this empty null header is created automatically/implicitely
-        sheader = self.makeSH(name=b'', type=elffile.SHT.SHT_NULL, addr=0, offset=0,
-                              size=0, entsize=0, flags=0, link=0, info=0, align=0)
+        sheader = self.make_sh(name=b'', stype=elffile.SHT.SHT_NULL, addr=0, offset=0,
+                               size=0, entsize=0, flags=0, link=0, info=0, align=0)
         ef.sectionHeaders.append(sheader)
 
         enotes = self.gen_notes()
         block = bytearray(enotes.size)
         enotes.pack_into(block)
-        sheader = self.makeSH(name=b"note0", type=elffile.SHT.SHT_NOTE, addr=0x1234, offset=0x1234,
-                              size=len(block), entsize=0, flags=elffile.SHF.SHF_ALLOC, link=0, info=0, align=1)
+        sheader = self.make_sh(name=b"note0", stype=elffile.SHT.SHT_NOTE, addr=0x1234, offset=0x1234,
+                               size=len(block), entsize=0, flags=elffile.SHF.SHF_ALLOC, link=0, info=0, align=1)
         sheader.content = block
         ef.sectionHeaders.append(sheader)
-        pheader = self.makePHbySH(sheader, type=elffile.PT.PT_NOTE, vaddr=0, paddr=0,
-                                  flags=elffile.PF.PF_X | elffile.PF.PF_R | elffile.PF.PF_W)
+        pheader = self.make_ph_by_sh(sheader, ptype=elffile.PT.PT_NOTE, vaddr=0, paddr=0,
+                                     flags=elffile.PF.PF_X | elffile.PF.PF_R | elffile.PF.PF_W)
         ef.programHeaders.append(pheader)
 
         # new version
         for vma in self.vma_list:
             size = vma.vm_end - vma.vm_start
-            sheader = self.makeSH(name=b'load', type=elffile.SHT.SHT_PROGBITS)
+            sheader = self.make_sh(name=b'load', stype=elffile.SHT.SHT_PROGBITS)
             sheader.content = self.DataGenerator(self, self.task, vma.vm_start, vma.vm_end)
-            if self.checkAllZero(sheader.content):
+            if self.check_all_zero(sheader.content):
                 logger.debug("VMA are at %x (size %x): skipping (all zero)", vma.vm_start, size)
                 continue
             logger.debug("VMA are at %x (size %x): adding section / SH / PH", vma.vm_start, size)
             sheader.section_size = size
             sheader.addr = vma.vm_start
             sheader.flags = self.get_shf_from_vmas(vma.vm_flags)
-            pheader = self.makePH(filesz=size, memsz=size, flags=self.get_phf_from_vmas(vma.vm_flags),
-                                  vaddr=vma.vm_start, paddr=0, align=1, type=elffile.PT.PT_LOAD)
+            pheader = self.make_ph(filesz=size, memsz=size, flags=self.get_phf_from_vmas(vma.vm_flags),
+                                   vaddr=vma.vm_start, paddr=0, align=1, ptype=elffile.PT.PT_LOAD)
             sheader._ph = pheader
 
             ef.sectionHeaders.append(sheader)

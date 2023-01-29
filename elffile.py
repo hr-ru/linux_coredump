@@ -1,10 +1,16 @@
 #!/usr/bin/env python -3
 # -*- coding: utf-8 -*-
 #
+# Original version:
 # Copyright 2010 - 2011 K. Richard Pixley.
-# See LICENSE for details.
+# See LICENSE-elffile.txt for details (MIT License)
+# Original repository no longer available
+# now to be found here: https://github.com/slorquet/elffile2/blob/master/elffile.py
 #
 # Time-stamp: <01-Jul-2013 10:41:57 PDT by rich@noir.com>
+#
+# Additions for writing new ELF files with notes relevant for core files
+# 2023, Hans P. Reiser
 
 """
 Elffile is a library which reads and writes `ELF format object files
