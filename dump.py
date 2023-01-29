@@ -1,70 +1,166 @@
-# Functions and classes for creating core dump.
-# Code is inspired by criucoredump [1].
+# File by Jonas Pöhler https://github.com/poehlerj/linux_coredump
 #
-# [1] https://github.com/checkpoint-restore/criu/tree/criu-dev/coredump
+# Note:
+# based on work from https://github.com/Angelomirabella/linux_coredump/blob/master/coredump.py
+# (no license statement)
+# based on work from https://github.com/checkpoint-restore/criu/tree/criu-dev/coredump
+# (GPL licensed)
+#
+# The code from criu-dev has now been replaced by functionality from elffile.py
+# There should by no criu code in here any more
+# TODO: Check if there is Angelomirabella code in here and what its lisence status is
 
-#
-import io
+import mmap
 import sys
-from typing import List
+import collections
+import struct
+import logging
 
-from . import elf
-from .elf import PF_R, VM_WRITE, VM_EXEC
-import ctypes
+#sys.path.append("/root/vol/linux_coredump/")
+#import elffile
+from . import elffile #as elffile
 
 from volatility3.framework.objects import StructType
-from volatility3.framework.symbols.linux.extensions import vm_area_struct
 
-PAGESIZE = 4096
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, format="%(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
+logger = logging.getLogger("elffile")
 
+#% see https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/ptrace.h for pt_regs structure definition
+pt_regs_x86_32 = [
+        'ebx',
+        'ecx',
+        'edx',
+        'esi',
+        'edi',
+        'ebp',
+        'eax',
+        'ds',
+        'es',
+        'fs',
+        'gs',
+        'orig_eax',
+        'eip',
+        'cs',
+        'eflags',
+        'esp',
+        'ss'
+    ]
+pt_regs_x86_64 = [
+        'r15',
+        'r14',
+        'r13',
+        'r12',
+        'rbp',
+        'rbx',
+        'r11',
+        'r10',
+        'r9',
+        'r8',
+        'rax',
+        'rcx',
+        'rdx',
+        'rsi',
+        'rdi',
+        'orig_ax',
+        'rip',
+        'cs',
+        'eflags',
+        'rsp',
+        'ss'
+    ]
 
-class elf_note:
-    nhdr = None  # Elf_Nhdr;
-    owner = None  # i.e. CORE or LINUX;
-    data = None  # Ctypes structure with note data;
 
 
 class coredump:
     """
-    A class to keep elf core dump components inside and
-    functions to properly write them to file.
+    This class creates a elf core dump file using elffile,
+    based on volatility3 data structures of a Linux system
+    (task struct and its siblings)
+    and writes them to a (sparse) file
     """
-    ehdr = None  # Elf ehdr;
-    phdrs = []  # Array of Phdrs;
-    notes = []  # Array of elf_notes;
-    vmas = []  # Array of BytesIO with memory content;
-    shdrs = []  # Array of Shdrs
+    # Flags for vm areas in mm struct
+    VM_READ = 0x0001  # /* currently active flags */
+    VM_WRITE = 0x0002
+    VM_EXEC = 0x0004
+    VM_SHARED = 0x0008
 
-    def __init__(self, context, task: StructType, vma_list: List[vm_area_struct], threads_registers, x86=False):
+    # Supported architectures (32bit x86 not really tested, working on 64bit x86_64)
+    ELF_ISA_x86 = 3
+    ELF_ISA_x86_64 = 0x3E
+
+    def __init__(self, context, task: StructType, kernel, isa=ELF_ISA_x86_64):
         self.context = context
         self.task = task
-        self.vma_list = vma_list
-        self.threads_registers = threads_registers
-        self.x86 = x86
+        self.vma_list = task.mm.get_mmap_iter()
 
-    def get_vma_flags(self, vma_flags):
-        flags = 0
-        # if vma_flags & VM_READ == VM_READ:
-        flags = flags | elf.PF_R
-        if vma_flags & VM_WRITE == VM_WRITE:
-            flags = flags | elf.PF_W
-        if vma_flags & VM_EXEC == VM_EXEC:
-            flags = flags | elf.PF_X
+        self.kernel_layer = context.modules[kernel].layer_name
 
+        self.threads_registers = {task.pid: self._parse_kernel_stack(task)}
+
+        # Get registers from all additional threads
+        for t in task.thread_group:
+            regs = self._parse_kernel_stack(t)
+            if regs:
+                self.threads_registers[t.pid] = regs
+
+        self.isa = isa
+
+
+    def _parse_kernel_stack(self, task):
+        result = collections.OrderedDict()
+        # vmlinux = self.context.modules[self.config['kernel']]
+
+        # proc_as = task.get_process_address_space()
+        if hasattr(task, "stack"):
+            # According to Linux kernel sousces (https://elixir.bootlin.com/linux/v5.8/source/arch/x86/include/asm/processor.h#L843)
+            # pt_regs can be found on the stack at task->stack + THREAD_SIZE  - TOP_OF_KERNEL_STACPADDING - sizeof(pointer)
+            # THREAD_SIZE is (PAGE_SIZE << THREAD_SIZE_ORDER), with THREAD_SIZE_ORDER being (2+KASAN_STACK_ORDER)
+            # KASAN_STACK_ORDER IS 0 (w/o KASAN) or 1 (w/ KASAN)
+            # So this value is valid here systems without KASAN only
+            # TOP_OF_KERNEL_STACKPADDING is 0 for 64bit (it is 8 or 16 for x86_32 without/with CONFIG_VM86))
+            addr = task.stack + (1 << 14)
+
+            for reg in pt_regs_x86_64[::-1]:  # reverse list, because we read up in the stack
+                # debug.info("Reading {:016x}".format(addr))
+                # 64-bit only
+                addr -= 0x8
+                val_raw = self.context.layers.read(self.kernel_layer, addr, 0x8)
+                val = struct.unpack('<Q', val_raw)[0]
+                result[reg] = val
+            return result
+        return None
+
+
+    """
+    Function to convert memory access bits from vma area (task struct -> mm) into
+    ELF section header flags
+    """
+
+    def get_shf_from_vmas(self, vma_flags):
+        flags = elffile.SHF.SHF_ALLOC
+        if vma_flags & self.VM_WRITE:
+            flags |= elffile.SHF.SHF_WRITE
+        if vma_flags & self.VM_EXEC:
+            flags |= elffile.SHF.SHF_EXECINSTR
         return flags
 
-    def get_shdr_flags(self, vma_flags):
-        flags = 0
-        if vma_flags & elf.PF_X == elf.PF_X:
-            flags = flags | elf.SHF_EXECINSTR
-        flags = flags | elf.SHF_ALLOC
-        if vma_flags & elf.PF_W == elf.PF_W:
-            flags = flags | elf.SHF_WRITE
+    """
+    Function to convert memory access bits from vma area (task struct -> mm) into
+    ELF program header flags
+    """
 
+    def get_phf_from_vmas(self, vma_flags):
+        flags = 0
+        if vma_flags & self.VM_READ:
+            flags = flags | elffile.PF.PF_R
+        if vma_flags & self.VM_WRITE:
+            flags = flags | elffile.PF.PF_W
+        if vma_flags & self.VM_EXEC:
+            flags = flags | elffile.PF.PF_X
         return flags
 
     def read_addr_range(self, task, start, end):
-        pagesize = 4096
+        PAGESIZE = 4096
 
         # set the as with our new dtb so we can read from userland
         proc_layer_name = task.add_process_layer()
@@ -74,70 +170,38 @@ class coredump:
         proc_layer = self.context.layers[proc_layer_name]
 
         while start < end:
-            yield proc_layer.read(start, pagesize, pad=True)
-            start = start + pagesize
+            yield proc_layer.read(start, PAGESIZE, pad=True)
+            start = start + PAGESIZE
 
-    def gen_vmas(self, ):
-
-        class vma_class:
-            data = None
-            filesz = None
-            memsz = None
-            flags = None
-            start = None
-
-        vmas_tmp = []
-        for vma in self.vma_list:
-            size = vma.vm_end - vma.vm_start
-            v = vma_class()
-            v.filesz = size
-
-            class DataGenerator:
-
-                def __init__(self, coredump, task, start, end) -> None:
-                    super().__init__()
-                    self.coredump = coredump
-                    self.task = task
-                    self.start = start
-                    self.end = end
-
-                def generate(self):
-                    for page in self.coredump.read_addr_range(self.task, self.start, self.end):
-                        yield page
-
-            v.data = DataGenerator(self, self.task, vma.vm_start, vma.vm_end)
-
-            v.memsz = size
-            v.start = vma.vm_start
-            v.flags = self.get_vma_flags(vma.vm_flags)
-            vmas_tmp.append(v)
-        return vmas_tmp
+    def ffs(self, x):
+        """ Calculate the index (starting at LSB) of the first set bit in x
+            ffs(0) will return -1
+        """
+        return (x & -x).bit_length() - 1
 
     def gen_prpsinfo(self):
         """
         Generate NT_PRPSINFO note for process pid.
         """
+        prpsinfo = elffile.ElfNotePRPSINFO()
 
-        if self.x86 is True:
-            prpsinfo = elf.elf_prpsinfo32()
-        else:
-            prpsinfo = elf.elf_prpsinfo()
+        # hr: The old translation from task struct process status to elf core status
+        # did not make much sense. se also:
+        # https://elixir.bootlin.com/linux/latest/source/include/linux/sched.h#L84
+        # https://elixir.bootlin.com/linux/latest/source/tools/perf/builtin-sched.c#L110
+        # Linux kernel code actually does this: i = state ? ffz(~state) + 1 : 0;
+        # so let's use the same approach here. (ffz(~z) is the same as ffs(z)
+        prpsinfo.pr_state = (self.ffs(self.task.state) if self.task.state > 0 else 0)
 
-        ctypes.memset(ctypes.addressof(prpsinfo), 0, ctypes.sizeof(prpsinfo))
-
-        TASK_ALIVE = 0x1
-        TASK_DEAD = 0x2
-        TASK_STOPPED = 0x3
-
-        if self.task.state == TASK_ALIVE:
-            prpsinfo.pr_state = 0
-        elif self.task.state == TASK_DEAD:
-            prpsinfo.pr_state = 4
-        elif self.task.state == TASK_STOPPED:
-            prpsinfo.pr_state = 3
-
-        prpsinfo.pr_sname = '.'.encode("utf-8") if prpsinfo.pr_state > 5 else (
-            "RSDTZW"[prpsinfo.pr_state].encode("utf-8"))
+        """"
+        R: Running
+        S: Sleeping
+        D: Waiting on I/O (Uninterruptible sleep)
+        T: Traced or stopped
+        Z: Zombie (terminated but not yet cleaned up by its parent)
+        W: Paging (only in Linux 2.6.18 and later)
+        """
+        prpsinfo.pr_sname = ('.' if prpsinfo.pr_state > 5 else "RSDTZW"[prpsinfo.pr_state]).encode("utf-8")
         prpsinfo.pr_zomb = 1 if prpsinfo.pr_state == 4 else 0
         prpsinfo.pr_nice = 0  # default
         prpsinfo.pr_flag = 0  # default
@@ -154,186 +218,45 @@ class coredump:
         args: bytes = proc_layer.read(self.task.mm.arg_start, size_to_read, pad=True)
         prpsinfo.pr_psargs = (" ".join(map(lambda x: x.decode('utf-8'), args.split(b'\x00')))).strip().encode("utf-8")
 
-        if self.x86 is True:
-            nhdr = elf.Elf32_Nhdr()
-            nhdr.n_namesz = 5
-            nhdr.n_descsz = ctypes.sizeof(elf.elf_prpsinfo32())
-            nhdr.n_type = elf.NT_PRPSINFO
-
-        else:
-            nhdr = elf.Elf64_Nhdr()
-            nhdr.n_namesz = 5
-            nhdr.n_descsz = ctypes.sizeof(elf.elf_prpsinfo())
-            nhdr.n_type = elf.NT_PRPSINFO
-
-        note = elf_note()
-        note.data = prpsinfo
-        note.owner = "CORE"
-        note.nhdr = nhdr
-
-        return note
+        return prpsinfo
 
     def gen_prstatus(self, thread):
         """
         Generate NT_PRSTATUS note for thread tid of process pid.
         """
         regs = self.threads_registers[thread.pid]
+        logger.debug("Registers for PID %d: %s", thread.pid, regs)
 
-        prstatus = elf.elf_prstatus()
+        prstatus = elffile.ElfNotePRSTATUS()
+        prstatus.pid = thread.pid
+        prstatus.ppid = thread.parent.pid
+        prstatus.pgrp = thread.parent.cred.gid.val
+        prstatus.sid = 0  # default
+        prstatus.registers.registers = regs
+        regs["fs_base"] = thread.thread.fsbase
+        return prstatus
 
-        ctypes.memset(ctypes.addressof(prstatus), 0, ctypes.sizeof(prstatus))
 
-        prstatus.pr_pid = thread.pid
-        prstatus.pr_ppid = thread.parent.pid
-        prstatus.pr_pgrp = thread.parent.cred.gid.val
-        prstatus.pr_sid = 0  # default
+    # def gen_siginfo(self):
+    ## NT_SIGINFO not implemented so far
 
-        prstatus.pr_reg.r15 = regs["r15"]
-        prstatus.pr_reg.r14 = regs["r14"]
-        prstatus.pr_reg.r13 = regs["r13"]
-        prstatus.pr_reg.r12 = regs["r12"]
-        prstatus.pr_reg.rbp = regs["rbp"]
-        prstatus.pr_reg.rbx = regs["rbx"]
-        prstatus.pr_reg.r11 = regs["r11"]
-        prstatus.pr_reg.r10 = regs["r10"]
-        prstatus.pr_reg.r9 = regs["r9"]
-        prstatus.pr_reg.r8 = regs["r8"]
-        prstatus.pr_reg.rax = regs["rax"]
-        prstatus.pr_reg.rcx = regs["rcx"]
-        prstatus.pr_reg.rdx = regs["rdx"]
-        prstatus.pr_reg.rsi = regs["rsi"]
-        prstatus.pr_reg.rdi = regs["rdi"]
-        prstatus.pr_reg.orig_rax = regs["orig_ax"]
-        prstatus.pr_reg.rip = regs["rip"]
-        prstatus.pr_reg.cs = regs["cs"]
-        prstatus.pr_reg.eflags = regs["eflags"]
-        prstatus.pr_reg.rsp = regs["rsp"]
-        prstatus.pr_reg.ss = regs["ss"]
-        prstatus.pr_reg.fs_base	= thread.thread.fsbase
-        #	prstatus.pr_reg.gs_base		= regs["gs_base"]
-        #	prstatus.pr_reg.ds		= regs["ds"]		MISSING
-        #	prstatus.pr_reg.es		= regs["es"]
-        #	prstatus.pr_reg.fs		= regs["fs"]
-        #	prstatus.pr_reg.gs		= regs["gs"]
-
-        nhdr = elf.Elf64_Nhdr()
-        nhdr.n_namesz = 5
-        nhdr.n_descsz = ctypes.sizeof(elf.elf_prstatus())
-        nhdr.n_type = elf.NT_PRSTATUS
-
-        note = elf_note()
-        note.data = prstatus
-        note.owner = "CORE"
-        note.nhdr = nhdr
-
-        return note
-
-    def gen_prstatus_x86(self, thread):
-        """
-        Generate NT_PRSTATUS note for thread tid of process pid.
-        """
-        regs = self.threads_registers[str(thread.pid)]
-
-        prstatus = elf.elf_prstatus32()
-
-        ctypes.memset(ctypes.addressof(prstatus), 0, ctypes.sizeof(prstatus))
-
-        prstatus.pr_pid = thread.pid
-        prstatus.pr_ppid = thread.parent.pid
-        prstatus.pr_pgrp = thread.parent.gid
-        prstatus.pr_sid = 0  # default
-
-        if "ebx" in regs:
-            prstatus.pr_reg.ebx = regs["ebx"]
-            prstatus.pr_reg.ecx = regs["ecx"]
-            prstatus.pr_reg.edx = regs["edx"]
-            prstatus.pr_reg.esi = regs["esi"]
-            prstatus.pr_reg.edi = regs["edi"]
-            prstatus.pr_reg.ebp = regs["ebp"]
-            prstatus.pr_reg.eax = regs["eax"]
-            prstatus.pr_reg.ds = regs["ds"]
-            prstatus.pr_reg.es = regs["es"]
-            prstatus.pr_reg.fs = regs["fs"]
-            prstatus.pr_reg.gs = regs["gs"]
-            prstatus.pr_reg.orig_eax = regs["orig_eax"]
-            prstatus.pr_reg.eip = regs["eip"]
-            prstatus.pr_reg.cs = regs["cs"]
-            prstatus.pr_reg.eflags = regs["eflags"]
-            prstatus.pr_reg.esp = regs["esp"]
-            prstatus.pr_reg.ss = regs["ss"]
-        else:
-            prstatus.pr_reg.ebx = regs["rbx"]
-            prstatus.pr_reg.ecx = regs["rcx"]
-            prstatus.pr_reg.edx = regs["rdx"]
-            prstatus.pr_reg.esi = regs["rsi"]
-            prstatus.pr_reg.edi = regs["rdi"]
-            prstatus.pr_reg.ebp = regs["rbp"]
-            prstatus.pr_reg.eax = regs["rax"]
-            # prstatus.pr_reg.ds	= regs["ds"]
-            # prstatus.pr_reg.es	= regs["es"]
-            # prstatus.pr_reg.fs	= regs["fs"]
-            # prstatus.pr_reg.gs	= regs["gs"]
-            # prstatus.pr_reg.orig_eax	= regs["orig_eax"]
-            prstatus.pr_reg.eip = regs["rip"]
-            prstatus.pr_reg.cs = regs["cs"]
-            prstatus.pr_reg.eflags = regs["eflags"]
-            prstatus.pr_reg.esp = regs["rsp"]
-            prstatus.pr_reg.ss = regs["ss"]
-
-        nhdr = elf.Elf32_Nhdr()
-        nhdr.n_namesz = 5
-        nhdr.n_descsz = ctypes.sizeof(elf.elf_prstatus32())
-        nhdr.n_type = elf.NT_PRSTATUS
-
-        note = elf_note()
-        note.data = prstatus
-
-        note.owner = "CORE"
-        note.nhdr = nhdr
-
-        return note
-
-    def gen_siginfo(self):
-        """
-        Generate NT_SIGINFO note for thread tid of process pid.
-        """
-        siginfo = elf.siginfo_t()
-        # FIXME zeroify everything for now
-        ctypes.memset(ctypes.addressof(siginfo), 0, ctypes.sizeof(siginfo))
-
-        nhdr = elf.Elf64_Nhdr()
-        nhdr.n_namesz = 5
-        nhdr.n_descsz = ctypes.sizeof(elf.siginfo_t())
-        nhdr.n_type = elf.NT_SIGINFO
-
-        note = elf_note()
-        note.data = siginfo
-        note.owner = "CORE"
-        note.nhdr = nhdr
-
-        return note
 
     def gen_thread_notes(self, thread):
         notes = []
 
-        notes.append(self.gen_prstatus(thread))
-        #	notes.append(self.gen_fpregset(pid, tid))  floating point register do not know hot to get them
-        #	notes.append(self.gen_x86_xstate(pid, tid)) unknown
+        prstatus = self.gen_prstatus(thread)
+        print("Notes: appending ", prstatus, prstatus.registers)
+        notes.append(prstatus)
+        # notes.append(self.gen_fpregset(pid, tid))  floating point register should be in task->fpu
+        # notes.append(self.gen_x86_xstate(pid, tid)) unknown
         # notes.append(self.gen_siginfo())
-
         return notes
 
-    def gen_thread_notes_x86(self, thread):
-        notes = []
-
-        notes.append(self.gen_prstatus_x86(thread))
-
-        return notes
-
+    """
     def _gen_files(self):
-        """
+        ""
         Generate NT_FILE note for process pid.
-        """
+        ""
 
         class mmaped_file_info:
             start = None
@@ -365,7 +288,9 @@ class coredump:
             info.start = vma.vm_start
             info.end = vma.vm_end
             info.file_ofs = off
-            info.name = fname.encode("utf-8")
+            ##info.name = ("xx"+fname).encode("utf-8")
+            ##info.name = fname.encode("utf-8")
+            info.name = "xx".encode("utf-8")
 
             infos.append(info)
 
@@ -414,11 +339,13 @@ class coredump:
         note.data = data
 
         return note
+    """
 
+    """
     def _gen_files_x86(self):
-        """
+        ""
         Generate NT_FILE note for process pid.
-        """
+        ""
 
         class mmaped_file_info:
             start = None
@@ -475,319 +402,199 @@ class coredump:
         note.data = data
 
         return note
-
-    def _gen_auxv(self):
-        auxv = self.task.mm.saved_auxv
-        auxv_arr = (elf.Elf64_auxv_t * int(len(auxv) / 2))()
-
-        index = 0
-        while index + 1 < len(auxv_arr):
-            aux = elf.Elf64_auxv_t()
-            aux.a_type = auxv[index * 2]
-            aux.a_un.a_val = auxv[index * 2 + 1]
-            auxv_arr[index] = aux
-            index += 1
-
-        nhdr = elf.Elf64_Nhdr()
-        nhdr.n_namesz = 5  # XXX strlen + 1
-        nhdr.n_descsz = ctypes.sizeof(auxv_arr)
-        nhdr.n_type = elf.NT_AUXV
-
-        note = elf_note()
-        note.nhdr = nhdr
-        note.owner = "CORE"
-        note.data = auxv_arr
-
-        return note
+    """
 
     def gen_notes(self):
         """
         Generate notes for core dump of process pid.
         """
-        notes = []
+        notes = elffile.ElfNotes()
+
+        # Generate PRPSINFO note from task struct information in self.task
         notes.append(self.gen_prpsinfo())
 
-        # Main thread first
-        notes += self.gen_thread_notes(self.task)
+        # Generate PRSTATUS notes for thread first
+        # (could be multiple notes: regs, fpregs, signals, etc. For now, only regs are generated)
+        notes.append(self.gen_thread_notes(self.task))
 
-        # Then other threads
-        for t in self.task.thread_group:
-            if t.pid == self.task.pid:
+        # Geerate PRSTATUS notes for all other threads
+        for thread in self.task.thread_group:
+            if thread.pid == self.task.pid:
                 continue
 
-            notes += self.gen_thread_notes(t)
+            notes.append(self.gen_thread_notes(thread))
 
-        notes.append(self._gen_auxv())
-        notes.append(self._gen_files())
+        # Append AUXV notes (needed by jmap for entry point)
+        notes.append(elffile.ElfNoteAUXV(self.task.mm.saved_auxv))
+
+        # notes.append(self._gen_files())
+        logger.debug("Notes are %s", str(notes))
         return notes
 
-    def gen_notes_x86(self):
-        """
-        Generate notes for core dump of process pid.
-        """
-        notes = []
-        notes.append(self.gen_prpsinfo())
+    # Create ElfFileIdent: The very first part of the header
+    # defines ABI (Linux), 64 bit, Little Endian
 
-        threads = self.task.threads()
 
-        # Main thread first
-        notes += self.gen_thread_notes_x86(self.task)
+    def makeEFI(self):
+        efi = elffile.ElfFileIdent()
+        efi.magic = b'\x7fELF'
+        efi.elfClass = elffile.ElfClass.ELFCLASS64
+        if self.isa == self.ELF_ISA_x86:
+            efi.elfClass = elffile.ElfClass.ELFCLASS32
+        efi.fileVersion = elffile.EV.EV_CURRENT
+        efi.osabi = elffile.ElfOsabi.ELFOSABI_LINUX
+        efi.abiversion = 0
+        efi.elfData = elffile.ElfData.ELFDATA2LSB
+        return efi
 
-        # Then other threads
-        for t in threads:
-            if t.pid == self.task.pid:
+
+    # Create ElfSectionHeader
+    def makeSH(self, name=b'', type=elffile.SHT.SHT_NULL, addr=0, offset=0, size=0, entsize=0, flags=0, link=0, info=0,
+               align=1):
+        # create one section header
+        sh = self.ef.sectionHeaderClass()
+        sh.content = b'\0' * size
+        sh.section_size = size
+        sh.name = name
+        sh.offset = offset
+        sh.type = type
+        sh.addr = addr
+        sh.flags = flags
+        sh.entsize = entsize
+        sh.info = info
+        sh.link = link
+        sh.addralign = align
+        return sh
+
+
+    def makePH(self, type=elffile.PT.PT_NULL, offset=None, vaddr=None, paddr=None, filesz=None, memsz=None, flags=None,
+               align=None):
+        ph = self.ef.programHeaderClass()
+        ph.content = b'\0' * filesz
+        ph.type = type
+        ph.offset = offset
+        ph.vaddr = vaddr
+        ph.paddr = paddr
+        ph.filesz = filesz
+        ph.memsz = memsz
+        ph.flags = flags
+        ph.align = align
+        return ph
+
+
+    def makePHbySH(self, sh, type=elffile.PT.PT_NULL, vaddr=None, paddr=None, flags=0):
+        ph = self.ef.programHeaderClass()
+        ph.content = sh.content
+        ph.type = type
+        ph.offset = sh.offset
+        ph.vaddr = vaddr
+        ph.paddr = paddr
+        ph.filesz = sh.section_size
+        ph.memsz = sh.section_size
+        ph.flags = flags
+        ph.align = sh.addralign
+        sh._ph = ph
+        return ph
+
+
+    class DataGenerator:
+        def __init__(self, coredump, task, start, end) -> None:
+            super().__init__()
+            self.coredump = coredump
+            self.task = task
+            self.start = start
+            self.end = end
+
+        def generate(self):
+            for page in self.coredump.read_addr_range(self.task, self.start, self.end):
+                yield page
+
+        def __len__(self):
+            return self.end - self.start
+
+
+    def checkAllZero(self, gen):
+        for block in gen.generate():
+            if block == b'\0' * len(block):
                 continue
+            return False
+        return True
 
-            notes += self.gen_thread_notes_x86(t)
-
-        notes.append(self._gen_files_x86())
-        return notes
-
-    def gen_phdrs(self, notes, vmas):
-        """
-        Generate program headers for process pid.
-        """
-        phdrs = []
-
-        if self.x86 is True:
-            offset = ctypes.sizeof(elf.Elf32_Ehdr())
-            offset += (len(vmas) + 1) * ctypes.sizeof(elf.Elf32_Phdr())
-            phdr = elf.Elf32_Phdr()
-
-        else:
-            offset = ctypes.sizeof(elf.Elf64_Ehdr())
-            offset += (len(vmas) + 1) * ctypes.sizeof(elf.Elf64_Phdr())
-            phdr = elf.Elf64_Phdr()
-
-        filesz = 0
-
-        for note in notes:
-            filesz += ctypes.sizeof(note.nhdr) + ctypes.sizeof(note.data) + 8
-
-        # PT_NOTE
-
-        ctypes.memset(ctypes.addressof(phdr), 0, ctypes.sizeof(phdr))
-        phdr.p_type = elf.PT_NOTE
-        phdr.p_offset = offset
-        phdr.p_filesz = filesz
-        phdr.p_flags = PF_R  # Read
-
-        phdrs.append(phdr)
-
-        note_align = PAGESIZE - ((offset + filesz) % PAGESIZE)
-
-        if note_align == PAGESIZE:
-            note_align = 0
-
-        offset += note_align
-
-        # VMA phdrs
-
-        for vma in self.vmas:
-            offset += filesz
-            filesz = vma.filesz
-
-            if self.x86 is True:
-                phdr = elf.Elf32_Phdr()
-            else:
-                phdr = elf.Elf64_Phdr()
-
-            ctypes.memset(ctypes.addressof(phdr), 0, ctypes.sizeof(phdr))
-            phdr.p_type = elf.PT_LOAD
-            phdr.p_align = 1
-            phdr.p_paddr = 0
-            phdr.p_offset = offset
-            phdr.p_vaddr = vma.start
-            phdr.p_memsz = vma.memsz
-            phdr.p_filesz = vma.filesz
-            phdr.p_flags = vma.flags
-
-            phdrs.append(phdr)
-
-        return phdrs
-
-    def gen_ehdr(self, phdrs):
-        """
-        Generate elf header for process pid with program headers phdrs.
-        """
-        ehdr = elf.Elf64_Ehdr()
-
-        ctypes.memset(ctypes.addressof(ehdr), 0, ctypes.sizeof(ehdr))
-        ehdr.e_ident[elf.EI_MAG0] = elf.ELFMAG0
-        ehdr.e_ident[elf.EI_MAG1] = elf.ELFMAG1
-        ehdr.e_ident[elf.EI_MAG2] = elf.ELFMAG2
-        ehdr.e_ident[elf.EI_MAG3] = elf.ELFMAG3
-        ehdr.e_ident[elf.EI_CLASS] = elf.ELFCLASS64
-        ehdr.e_ident[elf.EI_DATA] = elf.ELFDATA2LSB
-        ehdr.e_ident[elf.EI_VERSION] = elf.EV_CURRENT
-
-        ehdr.e_type = elf.ET_CORE
-        ehdr.e_machine = elf.EM_X86_64
-        ehdr.e_version = elf.EV_CURRENT
-        ehdr.e_phoff = ctypes.sizeof(elf.Elf64_Ehdr())
-        ehdr.e_ehsize = ctypes.sizeof(elf.Elf64_Ehdr())
-        ehdr.e_phentsize = ctypes.sizeof(elf.Elf64_Phdr())
-        # FIXME Case len(phdrs) > PN_XNUM should be handled properly.
-        # See fs/binfmt_elf.c from linux kernel.
-        ehdr.e_phnum = len(phdrs)
-
-        return ehdr
-
-    def gen_ehdr_x86(self, phdrs):
-        """
-        Generate elf header for process pid with program headers phdrs.
-        """
-        ehdr = elf.Elf32_Ehdr()
-
-        ctypes.memset(ctypes.addressof(ehdr), 0, ctypes.sizeof(ehdr))
-        ehdr.e_ident[elf.EI_MAG0] = elf.ELFMAG0
-        ehdr.e_ident[elf.EI_MAG1] = elf.ELFMAG1
-        ehdr.e_ident[elf.EI_MAG2] = elf.ELFMAG2
-        ehdr.e_ident[elf.EI_MAG3] = elf.ELFMAG3
-        ehdr.e_ident[elf.EI_CLASS] = elf.ELFCLASS32
-        ehdr.e_ident[elf.EI_DATA] = elf.ELFDATA2LSB
-        ehdr.e_ident[elf.EI_VERSION] = elf.EV_CURRENT
-
-        ehdr.e_type = elf.ET_CORE
-        ehdr.e_machine = elf.EM_386
-        ehdr.e_version = elf.EV_CURRENT
-        ehdr.e_phoff = ctypes.sizeof(elf.Elf32_Ehdr())
-        ehdr.e_ehsize = ctypes.sizeof(elf.Elf32_Ehdr())
-        ehdr.e_phentsize = ctypes.sizeof(elf.Elf32_Phdr())
-        ehdr.e_phnum = len(phdrs)
-
-        return ehdr
 
     def generate_coredump(self):
         """
         Generate core dump for pid.
         """
+        efi = self.makeEFI()  #
+        ef = elffile.ElfFile.encodedClass(efi)("<xyz>", efi)
+        self.ef = ef
 
-        # Generate everything backwards so it is easier to calculate offset.
-        self.vmas = self.gen_vmas()
-        if not self.x86:
-            self.notes = self.gen_notes()
-            self.phdrs = self.gen_phdrs(self.notes, self.vmas)
-            self.ehdr = self.gen_ehdr(self.phdrs)
-        else:
-            self.notes = self.gen_notes_x86()
-            self.phdrs = self.gen_phdrs(self.notes, self.vmas)
-            self.ehdr = self.gen_ehdr_x86(self.phdrs)
-        self.shdrs = []
+        # Add ElfFileHeader
+        efh = ef.fileHeaderClass()
+        efh.type = elffile.ET.ET_CORE
+        efh.machine = elffile.EM.EM_X86_64
+        if self.isa == self.ELF_ISA_x86:
+            efh.machine = elffile.EM.EM_386
+        efh.version = 1
+        efh.entry = 0
+        efh.programHeaderClass = ef.programHeaderClass()
+        efh.sectionHeaderClass = ef.sectionHeaderClass()
+        efh.shstrndx = 0
 
-        return
+        efh.ehsize = efh.size + efi.size
+        efh.shentsize = efh.sectionHeaderClass.size
+        efh.phentsize = efh.programHeaderClass.size
+        ef.fileHeader = efh
 
-    def write(self, buf):
+        # just for now. This may have to be removed as soon as this empty null header is created automatically/implicitely
+        sheader = self.makeSH(name=b'', type=elffile.SHT.SHT_NULL, addr=0, offset=0,
+                              size=0, entsize=0, flags=0, link=0, info=0, align=0)
+        ef.sectionHeaders.append(sheader)
+
+        enotes = self.gen_notes()
+        block = bytearray(enotes.size)
+        enotes.pack_into(block)
+        sheader = self.makeSH(name=b"note0", type=elffile.SHT.SHT_NOTE, addr=0x1234, offset=0x1234,
+                              size=len(block), entsize=0, flags=elffile.SHF.SHF_ALLOC, link=0, info=0, align=1)
+        sheader.content = block
+        ef.sectionHeaders.append(sheader)
+        pheader = self.makePHbySH(sheader, type=elffile.PT.PT_NOTE, vaddr=0, paddr=0,
+                                  flags=elffile.PF.PF_X | elffile.PF.PF_R | elffile.PF.PF_W)
+        ef.programHeaders.append(pheader)
+
+        # new version
+        for vma in self.vma_list:
+            size = vma.vm_end - vma.vm_start
+            sheader = self.makeSH(name=b'load', type=elffile.SHT.SHT_PROGBITS)
+            sheader.content = self.DataGenerator(self, self.task, vma.vm_start, vma.vm_end)
+            if self.checkAllZero(sheader.content):
+                continue
+            print("adding ", size, "at", vma.vm_start)
+            sheader.section_size = size
+            sheader.addr = vma.vm_start
+            sheader.flags = self.get_shf_from_vmas(vma.vm_flags)
+            ## TODO: ADD RIGHT DETAILS after memsz....
+            pheader = self.makePH(filesz=size, memsz=size, flags=self.get_phf_from_vmas(vma.vm_flags), vaddr=vma.vm_start,
+                                  paddr=0, align=1, type=elffile.PT.PT_LOAD)
+            sheader._ph = pheader
+            # start = vma.vm_start ??? => is this vaddr? paddr? ??
+
+            ef.sectionHeaders.append(sheader)
+            ef.programHeaders.append(pheader)
+
+        return ef
+
+
+    def write(self, f):
         """
         Write core dump to file f.
         """
-
-        section_header_start = sum(map(lambda x: x.filesz, self.vmas)) + ctypes.sizeof(elf.Elf64_Shdr)
-        section_header_start += sum(map(lambda x: ctypes.sizeof(x), self.phdrs))
-        for note in self.notes:
-            section_header_start += ctypes.sizeof(note.nhdr)
-            section_header_start += ctypes.sizeof(note.data)
-            section_header_start += 8
-        if self.x86 is True:
-            offset = ctypes.sizeof(elf.Elf32_Ehdr())
-            offset += (len(self.vmas) + 1) * ctypes.sizeof(elf.Elf32_Phdr())
-        else:
-            offset = ctypes.sizeof(elf.Elf64_Ehdr())
-            offset += (len(self.vmas) + 1) * ctypes.sizeof(elf.Elf64_Phdr())
-
-        filesz = 0
-
-        for note in self.notes:
-            filesz += ctypes.sizeof(note.nhdr) + ctypes.sizeof(note.data) + 8
-
-        note_align = PAGESIZE - ((offset + filesz) % PAGESIZE)
-
-        if note_align == PAGESIZE:
-            note_align = 0
-
-        section_header_start += note_align
-
-        string_table = b'\0' + ".shstrtab".encode("utf-8") + b'\0' + "note0".encode("utf-8") + b'\0' \
-                       + "load".encode("utf-8") + b'\0'
-        section_header_start += len(string_table)
-
-        self.ehdr.e_shoff = section_header_start
-        self.ehdr.e_shentsize = ctypes.sizeof(elf.Elf64_Shdr)
-        self.ehdr.e_shnum = 3 + len(self.vmas)
-        self.ehdr.e_shstrndx = self.ehdr.e_shnum - 1
-
-        current_offset = buf.write(self.ehdr)
-
-        shdr = elf.Elf64_Shdr()
-        shdr.sh_name = 0
-        shdr.sh_type = 0
-        shdr.sh_addr = 0
-        shdr.sh_offset = 0
-        shdr.sh_size = 0
-        self.shdrs.append(shdr)
-
-        for phdr in self.phdrs:
-            current_offset += buf.write(phdr)
-
-        note_size = 0
-        for note in self.notes:
-            note_size += buf.write(note.nhdr)
-            note_size += buf.write(note.owner.encode('utf-8'))
-            note_size += buf.write(b'\0' * (8 - len(note.owner)))
-            note_size += buf.write(note.data)
-
-        if note_align != 0:
-            scratch = (ctypes.c_char * note_align)()
-            ctypes.memset(ctypes.addressof(scratch), 0, ctypes.sizeof(scratch))
-            note_size += buf.write(scratch)
-
-        shdr = elf.Elf64_Shdr()
-        shdr.sh_name = 11
-        shdr.sh_type = 7  # -> note
-        shdr.sh_addr = 0
-        shdr.sh_offset = current_offset
-        shdr.sh_size = note_size
-        shdr.sh_flags = 2  # -> allocate
-        shdr.sh_addralign = 1
-        self.shdrs.append(shdr)
-
-        current_offset += note_size
-
-        counter = 0
-        for vma in self.vmas:
-            print(f"Writing pages for vma index {counter}")
-            counter += 1
-
-            shdr = elf.Elf64_Shdr()
-            shdr.sh_name = 17
-            shdr.sh_type = 1  # -> progbits
-            shdr.sh_addr = vma.start
-            shdr.sh_offset = current_offset
-            shdr.sh_flags = self.get_shdr_flags(vma.flags)
-            shdr.sh_addralign = 1
-
-            vma_size = 0
-            for page in vma.data.generate():
-                vma_size += buf.write(page)
-
-            shdr.sh_size = vma_size
-
-            self.shdrs.append(shdr)
-            current_offset += vma_size
-            buf.flush()
-
-        shdr = elf.Elf64_Shdr()
-        shdr.sh_name = 1
-        shdr.sh_type = 3  # -> STRTAB
-        shdr.sh_addr = 0
-        shdr.sh_offset = current_offset
-        shdr.sh_size = len(string_table)
-        shdr.sh_flags = 2  # -> SHF_ALLOC
-        shdr.sh_addralign = 1
-        self.shdrs.append(shdr)
-
-        buf.write(string_table)
-
-        for shdr in self.shdrs:
-            buf.write(shdr)
-        buf.flush()
+        sz = self.ef.size
+        print("size is ", sz)
+        f.seek(sz - 1)
+        f.write(b'\0')
+        f.flush()
+        mm = mmap.mmap(f.fileno(), sz)
+        self.ef.pack_into(mm)
+        mm.close()
+        f.close()
