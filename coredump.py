@@ -1,16 +1,10 @@
 # File originally by Jonas Pöhler
 #
-# Note:
-# There is code based on the following:
-# based on work from https://github.com/Angelomirabella/linux_coredump/blob/master/coredump.py
-# (no license statement)
-# based on work from https://github.com/checkpoint-restore/criu/tree/criu-dev/coredump
-# (GPL licensed)
-# but that code is not in this file (coredump.py), but in dump.py.
+# All the main work of creating the coredump is delegated to dump.py
+# The code for getting registers from the stack was moved to dump.py
 
 import io
 import logging
-import struct
 from typing import List
 
 from . import dump
@@ -41,7 +35,6 @@ class Coredump(interfaces.plugins.PluginInterface):
         ]
 
 
-
     def run(self):
         filter_func = pslist.PsList.create_pid_filter([self.config.get('pid', None)])
         task_list = list(pslist.PsList.list_tasks(context=self.context,
@@ -51,7 +44,6 @@ class Coredump(interfaces.plugins.PluginInterface):
 
         # Get registers from main thread of task
         task: StructType = task_list[0]
-
 
         kernel = self.config['kernel']
         cd = dump.coredump(self.context, task, kernel, dump.coredump.ELF_ISA_x86_64)
